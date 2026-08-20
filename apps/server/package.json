@@ -1,0 +1,22 @@
+{
+  "name": "@htn/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "echo 'source-only package'"
+  },
+  "dependencies": {
+    "@htn/chain": "workspace:*",
+    "@htn/shared": "workspace:*",
+    "bs58": "^6.0.0",
+    "hono": "^4.9.4",
+    "tweetnacl": "^1.0.3",
+    "zod": "^4.1.5"
+  }
+}

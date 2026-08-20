@@ -1,0 +1,576 @@
+{
+  "address": "6kdZgrhS4FANagxKHiMoJzm2wEp2NRgNYTkjpYYRjtdD",
+  "metadata": {
+    "name": "badge_escrow",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim_vault",
+      "docs": [
+        "Hacker's wallet takes ownership of the vault."
+      ],
+      "discriminator": [
+        87,
+        111,
+        176,
+        185,
+        53,
+        172,
+        227,
+        137
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_vault",
+      "docs": [
+        "Opens a badge's escrow vault on its first sync."
+      ],
+      "discriminator": [
+        29,
+        237,
+        247,
+        208,
+        193,
+        82,
+        54,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "badge_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "badge_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "animal_code",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "initialize_registry",
+      "docs": [
+        "One-time setup: pins the server key allowed to mint."
+      ],
+      "discriminator": [
+        189,
+        181,
+        20,
+        17,
+        174,
+        57,
+        249,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "mint_item",
+      "docs": [
+        "Grants one item for visiting a new sync station."
+      ],
+      "discriminator": [
+        22,
+        168,
+        67,
+        95,
+        238,
+        168,
+        162,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "item",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u32"
+        },
+        {
+          "name": "code",
+          "type": "u32"
+        },
+        {
+          "name": "station_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_item",
+      "docs": [
+        "Hacker pulls one item out of escrow into their own custody."
+      ],
+      "discriminator": [
+        2,
+        124,
+        40,
+        69,
+        19,
+        218,
+        135,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault"
+        },
+        {
+          "name": "item",
+          "writable": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ItemRecord",
+      "discriminator": [
+        242,
+        165,
+        245,
+        142,
+        116,
+        62,
+        133,
+        135
+      ]
+    },
+    {
+      "name": "Registry",
+      "discriminator": [
+        47,
+        174,
+        110,
+        246,
+        184,
+        182,
+        252,
+        218
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotAuthority",
+      "msg": "signer is not the registry authority"
+    },
+    {
+      "code": 6001,
+      "name": "VaultAlreadyClaimed",
+      "msg": "vault has already been claimed by a wallet"
+    },
+    {
+      "code": 6002,
+      "name": "VaultNotClaimed",
+      "msg": "vault has not been claimed by a wallet yet"
+    },
+    {
+      "code": 6003,
+      "name": "NotVaultOwner",
+      "msg": "signer is not the owner of this vault"
+    },
+    {
+      "code": 6004,
+      "name": "ItemIndexMismatch",
+      "msg": "item index must equal the vault's current item count"
+    },
+    {
+      "code": 6005,
+      "name": "ItemAlreadyWithdrawn",
+      "msg": "item has already been withdrawn from escrow"
+    },
+    {
+      "code": 6006,
+      "name": "ItemVaultMismatch",
+      "msg": "item does not belong to this vault"
+    }
+  ],
+  "types": [
+    {
+      "name": "ItemRecord",
+      "docs": [
+        "One earned piece of clothing.",
+        "",
+        "While escrowed, `owner` is the zero address and the record is custodied by",
+        "the program. `withdraw_item` hands it to the wallet that claimed the vault."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "minted_at",
+            "type": "i64"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "The vault this item was minted into."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Wallet holding the item, or the zero address while still in escrow."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "station_hash",
+            "docs": [
+              "sha256 of the sync station id that granted it."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "code",
+            "docs": [
+              "Packed slot/rarity/content encoding produced by the shared catalog."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "index",
+            "type": "u32"
+          },
+          {
+            "name": "withdrawn",
+            "docs": [
+              "1 once withdrawn from escrow. `u8` rather than `bool` to stay `Pod`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_pad",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Registry",
+      "docs": [
+        "Singleton naming the server key allowed to create vaults and mint items.",
+        "",
+        "Field order in every account here is largest-alignment-first with explicit",
+        "tail padding, because Anchor v2 accounts are `Pod` (zero-copy) and must have",
+        "no implicit padding holes."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault_count",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "The badge server's hot key. Only it may create vaults and mint items."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_pad",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "A single badge's escrow vault.",
+        "",
+        "Created by the server the first time a badge syncs, and holds the hacker's",
+        "assets until they connect a wallet. `owner` stays at [`crate::constants::UNCLAIMED`]",
+        "(the zero address) for as long as the vault is escrowed."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "claimed_at",
+            "docs": [
+              "Unix seconds when a wallet claimed this vault; 0 while unclaimed."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "badge_hash",
+            "docs": [
+              "sha256 of the badge id. Keeps attendee ids off-chain while still",
+              "giving every badge a stable, collision-resistant PDA."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Wallet that claimed the vault, or the zero address while in escrow."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "animal_code",
+            "docs": [
+              "Which animal the hacker was assigned. Content decoding lives off-chain."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "item_count",
+            "docs": [
+              "Number of items minted so far; doubles as the next item index."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_pad",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "ITEM_SEED",
+      "type": "bytes",
+      "value": "[105, 116, 101, 109]"
+    },
+    {
+      "name": "REGISTRY_SEED",
+      "type": "bytes",
+      "value": "[114, 101, 103, 105, 115, 116, 114, 121]"
+    },
+    {
+      "name": "VAULT_SEED",
+      "type": "bytes",
+      "value": "[118, 97, 117, 108, 116]"
+    }
+  ]
+}

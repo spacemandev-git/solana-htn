@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.local
+.DS_Store
+program/target/
+program/.anchor/
+program/test-ledger/
+.solana-keys/
