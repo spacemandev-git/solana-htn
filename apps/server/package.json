@@ -14,9 +14,7 @@
   "dependencies": {
     "@htn/chain": "workspace:*",
     "@htn/shared": "workspace:*",
-    "bs58": "^6.0.0",
     "hono": "^4.9.4",
-    "tweetnacl": "^1.0.3",
     "zod": "^4.1.5"
   }
 }

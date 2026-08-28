@@ -1,71 +1,97 @@
-/** Vault state as stored by the `badge_escrow` program. */
-export interface OnChainVault {
-  vaultAddress: string;
-  badgeHash: string;
-  /** null while the vault is still in escrow (on-chain owner is the zero address). */
-  owner: string | null;
-  animalCode: number;
-  itemCount: number;
-}
-
-/** One escrowed item record. */
-export interface OnChainItem {
-  itemAddress: string;
-  index: number;
-  code: number;
-  stationHash: string;
-  mintedAt: number;
-  withdrawn: boolean;
-}
-
-export interface ChainWriteResult {
-  address: string;
-  signature: string | null;
-}
+import type { Cluster } from '@htn/shared';
 
 /**
- * Everything the server needs from Solana.
+ * FROZEN CONTRACT — the server codes against exactly this surface.
  *
- * Two implementations ship: a live one that talks to the `badge_escrow` Anchor
- * program, and a disabled one used when no RPC/keypair is configured. The server
- * must work end to end with the disabled client so the badge + PWA flow can be
- * demoed without a validator running.
+ * Two implementations ship: a live one (x402 payer + Solana RPC reads) and a
+ * disabled one used when no payer key is configured. The server must work end
+ * to end with the disabled client so the badge + PWA loop can be demoed with
+ * no chain and no money.
  */
-export interface ChainClient {
+
+export interface QuestChainConfig {
+  cluster: Cluster;
+  /** Defaults to the cluster's public RPC when omitted. */
+  rpcUrl?: string | undefined;
+  /** base58-encoded 64-byte secret key of the paying agent. Absent → disabled. */
+  payerSecretKey?: string | undefined;
+  /** The only asset the agent will pay in. */
+  usdcMint: string;
+  /** Hard ceiling per payment AND per badge, in USDC base units. */
+  maxPaymentAtomic: number;
+}
+
+/** Result of checking that the hacker's program is actually deployed. */
+export interface ProgramCheckResult {
+  /** True when the chain is disabled and the check did not really run. */
+  skipped: boolean;
+  deployed: boolean;
+  executable: boolean;
+  error?: string;
+}
+
+/** Result of reading the `["quest"]` PDA owned by the hacker's program. */
+export interface QuestStateResult {
+  skipped: boolean;
+  /** The PDA address, when derivable. */
+  address: string | null;
+  /** The borsh string stored at QUEST_MESSAGE_OFFSET, when readable. */
+  message: string | null;
+  error?: string;
+}
+
+/** The single accepted payment option extracted from a 402 challenge. */
+export interface ChallengeRequirement {
+  scheme: string;
+  network: string;
+  asset: string;
+  payTo: string;
+  amountAtomic: number;
+  description?: string;
+}
+
+export interface ChallengeResult {
+  ok: boolean;
+  /** The requirement that passed validation (right cluster, USDC, under cap). */
+  requirement: ChallengeRequirement | null;
+  error?: string;
+}
+
+export interface PaymentOutcome {
+  ok: boolean;
+  /** True when the chain is disabled and no real money moved. */
+  simulated: boolean;
+  httpStatus: number;
+  /** Settlement signature from X-PAYMENT-RESPONSE, when the facilitator returned one. */
+  signature: string | null;
+  network: string | null;
+  amountAtomic: number | null;
+  /** Parsed JSON body of the paid response; null if it was not JSON. */
+  body: unknown;
+  error?: string;
+}
+
+export interface QuestChain {
   /** False for the disabled client. The server surfaces this in /api/health. */
   readonly enabled: boolean;
-  readonly programId: string;
-  /** Idempotent: creates the badge's escrow vault if it does not exist yet. */
-  ensureVault(badgeId: string, animalCode: number): Promise<ChainWriteResult>;
-  /** Mints item `index` into the badge's vault, held in escrow. Idempotent per index. */
-  mintItem(args: {
-    badgeId: string;
-    index: number;
-    code: number;
-    stationId: string;
-  }): Promise<ChainWriteResult>;
+  readonly cluster: Cluster;
+  /** The paying agent's public address; null when disabled. */
+  readonly payerAddress: string | null;
+  /** Is `programId` a live, executable program on the cluster? */
+  checkProgram(programId: string): Promise<ProgramCheckResult>;
+  /** Read the message out of PDA(["quest"], programId). */
+  readQuestMessage(programId: string): Promise<QuestStateResult>;
   /**
-   * Reports the on-chain claim state for `wallet`.
-   *
-   * The server deliberately cannot claim on a hacker's behalf: `claim_vault`
-   * requires the hacker's wallet to sign. This resolves the vault address and
-   * reports the signature only if the claim has already landed on chain.
+   * GET the endpoint expecting a 402, and validate the challenge: exact
+   * scheme, this cluster's network id (v1 or CAIP-2), the configured USDC
+   * mint, and an amount within the cap. Never pays. Works even when disabled.
    */
-  claimVault(badgeId: string, wallet: string): Promise<ChainWriteResult>;
-  /** Reports the on-chain withdrawal state for one item. Same signing caveat. */
-  withdrawItem(badgeId: string, index: number): Promise<ChainWriteResult>;
+  probeChallenge(endpointUrl: string): Promise<ChallengeResult>;
   /**
-   * Builds the unsigned `claim_vault` transaction for the hacker's wallet to
-   * sign in the browser. Base64 of a serialized legacy transaction, or null
-   * when the chain is disabled.
+   * Pay the endpoint once over x402 and return the settled outcome. The cap
+   * is enforced again here, independently of probeChallenge. When disabled,
+   * sends a simulated X-PAYMENT header instead of real money (the dev mock
+   * vendor accepts it; real endpoints will reject it, which is correct).
    */
-  buildClaimVaultTransaction(badgeId: string, wallet: string): Promise<string | null>;
-  /** Builds the unsigned `withdraw_item` transaction for the hacker to sign. */
-  buildWithdrawItemTransaction(
-    badgeId: string,
-    index: number,
-    wallet: string,
-  ): Promise<string | null>;
-  getVault(badgeId: string): Promise<OnChainVault | null>;
-  listItems(badgeId: string): Promise<OnChainItem[]>;
+  payEndpoint(endpointUrl: string): Promise<PaymentOutcome>;
 }
