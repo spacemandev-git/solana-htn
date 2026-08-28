@@ -1,15 +1,107 @@
 import { Database } from 'bun:sqlite';
-import { DisabledChainClient } from '@htn/chain';
-import { API_KEY_HEADER, type BadgeSummary, type SessionView, type SyncResponse } from '@htn/shared';
+import type {
+  ChallengeResult,
+  PaymentOutcome,
+  ProgramCheckResult,
+  QuestChain,
+  QuestStateResult,
+} from '@htn/chain';
+import {
+  API_KEY_HEADER,
+  CLUSTERS,
+  type BadgeSummary,
+  type Cluster,
+  type QuestSubmission,
+  type SessionView,
+  type SyncResponse,
+} from '@htn/shared';
 import { buildAppWithContext } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
 import type { ServiceContext } from '../src/services/context.ts';
+import { getQuestSubmission } from '../src/services/quests.ts';
 
 export const TEST_API_KEY = 'test-station-key';
-export const TEST_PROGRAM_ID = 'BadgeEscrow11111111111111111111111111111111';
+export const TEST_PROGRAM_ID = '11111111111111111111111111111111';
+export const TEST_MESSAGE = 'hello from chain state';
+export const TEST_ENDPOINT = 'https://vendor.example/quest';
+
+export class FakeQuestChain implements QuestChain {
+  readonly enabled: boolean;
+  readonly cluster: Cluster;
+  readonly payerAddress: string | null;
+
+  programResult: ProgramCheckResult = {
+    skipped: false,
+    deployed: true,
+    executable: true,
+  };
+  stateResult: QuestStateResult = {
+    skipped: false,
+    address: TEST_PROGRAM_ID,
+    message: TEST_MESSAGE,
+  };
+  challengeResult: ChallengeResult = {
+    ok: true,
+    requirement: {
+      scheme: 'exact',
+      network: CLUSTERS.devnet.caip2,
+      asset: CLUSTERS.devnet.usdcMint,
+      payTo: TEST_PROGRAM_ID,
+      amountAtomic: 1_000_000,
+    },
+  };
+  paymentResult: PaymentOutcome = {
+    ok: true,
+    simulated: false,
+    httpStatus: 200,
+    signature: 'payment-signature',
+    network: CLUSTERS.devnet.caip2,
+    amountAtomic: 1_000_000,
+    body: { message: TEST_MESSAGE, programId: TEST_PROGRAM_ID },
+  };
+
+  programHandler: ((programId: string) => Promise<ProgramCheckResult>) | null = null;
+  stateHandler: ((programId: string) => Promise<QuestStateResult>) | null = null;
+  challengeHandler: ((endpointUrl: string) => Promise<ChallengeResult>) | null = null;
+  paymentHandler: ((endpointUrl: string) => Promise<PaymentOutcome>) | null = null;
+
+  readonly calls = {
+    checkProgram: [] as string[],
+    readQuestMessage: [] as string[],
+    probeChallenge: [] as string[],
+    payEndpoint: [] as string[],
+  };
+
+  constructor(options: { enabled?: boolean; cluster?: Cluster; payerAddress?: string | null } = {}) {
+    this.enabled = options.enabled ?? true;
+    this.cluster = options.cluster ?? 'devnet';
+    this.payerAddress = options.payerAddress ?? TEST_PROGRAM_ID;
+  }
+
+  checkProgram(programId: string): Promise<ProgramCheckResult> {
+    this.calls.checkProgram.push(programId);
+    return this.programHandler?.(programId) ?? Promise.resolve(this.programResult);
+  }
+
+  readQuestMessage(programId: string): Promise<QuestStateResult> {
+    this.calls.readQuestMessage.push(programId);
+    return this.stateHandler?.(programId) ?? Promise.resolve(this.stateResult);
+  }
+
+  probeChallenge(endpointUrl: string): Promise<ChallengeResult> {
+    this.calls.probeChallenge.push(endpointUrl);
+    return this.challengeHandler?.(endpointUrl) ?? Promise.resolve(this.challengeResult);
+  }
+
+  payEndpoint(endpointUrl: string): Promise<PaymentOutcome> {
+    this.calls.payEndpoint.push(endpointUrl);
+    return this.paymentHandler?.(endpointUrl) ?? Promise.resolve(this.paymentResult);
+  }
+}
 
 export interface Harness {
   ctx: ServiceContext;
+  chain: FakeQuestChain;
   request(path: string, init?: RequestInit): Promise<Response>;
   sync(body: unknown, key?: string | null): Promise<Response>;
   disconnect(body: unknown, key?: string | null): Promise<Response>;
@@ -17,16 +109,16 @@ export interface Harness {
   close(): void;
 }
 
-export function createHarness(): Harness {
+export function createHarness(chain = new FakeQuestChain()): Harness {
   const db = new Database(':memory:');
-  const chain = new DisabledChainClient(TEST_PROGRAM_ID);
   const config = loadConfig({
     NODE_ENV: 'test',
     DATABASE_PATH: ':memory:',
     STATION_API_KEY: TEST_API_KEY,
     PUBLIC_APP_URL: 'http://localhost:5173',
     PWA_ORIGIN: 'http://localhost:5173',
-    PROGRAM_ID: TEST_PROGRAM_ID,
+    SOLANA_CLUSTER: chain.cluster,
+    MAX_REWARD_USD: '1',
   });
 
   const { app, ctx } = buildAppWithContext({ db, chain, config });
@@ -45,6 +137,7 @@ export function createHarness(): Harness {
 
   return {
     ctx,
+    chain,
     request,
     sync: (body, key) => authedPost('/api/station/sync', body, key),
     disconnect: (body, key) => authedPost('/api/station/disconnect', body, key),
@@ -73,6 +166,24 @@ export function syncBody(
     },
     ...(overrides.rssi === undefined ? {} : { rssi: overrides.rssi }),
   };
+}
+
+export function questBody(pairingCode: string) {
+  return { pairingCode, endpointUrl: TEST_ENDPOINT, programId: TEST_PROGRAM_ID };
+}
+
+export async function waitForQuest(
+  h: Harness,
+  badgeId: string,
+  predicate: (submission: QuestSubmission) => boolean = (submission) =>
+    submission.status !== 'verifying',
+): Promise<QuestSubmission> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const submission = getQuestSubmission(h.ctx.db, badgeId);
+    if (submission && predicate(submission)) return submission;
+    await Promise.resolve();
+  }
+  throw new Error(`quest for ${badgeId} did not reach the expected state`);
 }
 
 export async function json<T>(response: Response): Promise<T> {

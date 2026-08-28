@@ -1,46 +1,78 @@
-import type { ChainClient, ChainWriteResult, OnChainItem, OnChainVault } from './types.ts';
+import { getErrorMessage, probeChallenge } from './challenge.ts';
+import type {
+  ChallengeResult,
+  PaymentOutcome,
+  ProgramCheckResult,
+  QuestChain,
+  QuestChainConfig,
+  QuestStateResult,
+} from './types.ts';
 
-/**
- * Stand-in used when SOLANA_RPC_URL / the server keypair are not configured.
- *
- * It records nothing and signs nothing: every write resolves with a null
- * signature so the caller can persist "not yet on chain" rather than failing.
- * This keeps the badge -> station -> PWA loop fully demoable with no validator.
- */
-export class DisabledChainClient implements ChainClient {
+async function readJson(response: Response): Promise<unknown> {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!contentType.includes('application/json') && !contentType.includes('+json')) return null;
+  return response.json() as Promise<unknown>;
+}
+
+/** No-wallet implementation used for local demos and validation-only flows. */
+export class DisabledQuestChain implements QuestChain {
   readonly enabled = false;
-  readonly programId: string;
+  readonly payerAddress = null;
+  readonly cluster: QuestChainConfig['cluster'];
 
-  constructor(programId: string) {
-    this.programId = programId;
-  }
-
-  private static noop(address = ''): Promise<ChainWriteResult> {
-    return Promise.resolve({ address, signature: null });
+  constructor(private readonly config: QuestChainConfig) {
+    this.cluster = config.cluster;
   }
 
-  ensureVault(): Promise<ChainWriteResult> {
-    return DisabledChainClient.noop();
+  checkProgram(_programId: string): Promise<ProgramCheckResult> {
+    return Promise.resolve({ skipped: true, deployed: false, executable: false });
   }
-  mintItem(): Promise<ChainWriteResult> {
-    return DisabledChainClient.noop();
+
+  readQuestMessage(_programId: string): Promise<QuestStateResult> {
+    return Promise.resolve({ skipped: true, address: null, message: null });
   }
-  claimVault(): Promise<ChainWriteResult> {
-    return DisabledChainClient.noop();
+
+  probeChallenge(endpointUrl: string): Promise<ChallengeResult> {
+    return probeChallenge(endpointUrl, this.config);
   }
-  withdrawItem(): Promise<ChainWriteResult> {
-    return DisabledChainClient.noop();
-  }
-  buildClaimVaultTransaction(): Promise<string | null> {
-    return Promise.resolve(null);
-  }
-  buildWithdrawItemTransaction(): Promise<string | null> {
-    return Promise.resolve(null);
-  }
-  getVault(): Promise<OnChainVault | null> {
-    return Promise.resolve(null);
-  }
-  listItems(): Promise<OnChainItem[]> {
-    return Promise.resolve([]);
+
+  async payEndpoint(endpointUrl: string): Promise<PaymentOutcome> {
+    const payment = Buffer.from(
+      JSON.stringify({ x402Version: 2, simulated: true }),
+      'utf8',
+    ).toString('base64');
+
+    let httpStatus = 0;
+    try {
+      const response = await fetch(endpointUrl, {
+        method: 'GET',
+        headers: { 'X-PAYMENT': payment },
+        signal: AbortSignal.timeout(10_000),
+      });
+      httpStatus = response.status;
+      const ok = response.status >= 200 && response.status < 300;
+      const body = await readJson(response);
+      return {
+        ok,
+        simulated: true,
+        httpStatus,
+        signature: null,
+        network: null,
+        amountAtomic: null,
+        body,
+        ...(ok ? {} : { error: `request returned ${response.status}` }),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        simulated: true,
+        httpStatus,
+        signature: null,
+        network: null,
+        amountAtomic: null,
+        body: null,
+        error: getErrorMessage(error),
+      };
+    }
   }
 }

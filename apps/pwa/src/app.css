@@ -27,12 +27,6 @@
 	--rule-soft: #161616;
 	--rule-strong: #2c2c2c;
 
-	/* Rarity */
-	--rarity-common: #8d8d8d;
-	--rarity-uncommon: #14f195;
-	--rarity-rare: #57a6ff;
-	--rarity-legendary: #ffb648;
-
 	/* Type */
 	--sans:
 		'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Segoe UI', Roboto, sans-serif;

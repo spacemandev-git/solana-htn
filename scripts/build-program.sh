@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds badge_escrow for deployment.
+# Builds htn_quest for deployment.
 #
 # Two steps, on purpose:
 #   1. `anchor build` produces the IDL and TypeScript types, but the platform
@@ -8,8 +8,8 @@
 #      with `cargo-build-sbf --arch v3` (platform-tools v1.54) to get a
 #      deployable artifact.
 #
-# The IDL is then copied into packages/chain so the TS client's discriminators
-# always match the deployed program.
+# The IDL is then copied into the attendee starter so its client always matches
+# the deployed program.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,14 +17,15 @@ export PATH="$HOME/.cargo/bin:$HOME/.local/share/solana/install/active_release/b
 
 cd "$ROOT/program"
 anchor build
-cd "$ROOT/program/programs/badge_escrow"
+cd "$ROOT/program/programs/htn_quest"
 cargo-build-sbf --arch v3
 
-cp "$ROOT/program/target/idl/badge_escrow.json" "$ROOT/packages/chain/src/idl/badge_escrow.json"
+mkdir -p "$ROOT/starter/idl"
+cp "$ROOT/program/target/idl/htn_quest.json" "$ROOT/starter/idl/htn_quest.json"
 
-FLAGS=$(xxd -s 48 -l 4 -p "$ROOT/program/target/deploy/badge_escrow.so")
+FLAGS=$(xxd -s 48 -l 4 -p "$ROOT/program/target/deploy/htn_quest.so")
 if [ "$FLAGS" != "03000000" ]; then
-  echo "error: badge_escrow.so is not SBPFv3 (e_flags=$FLAGS); it will fail to deploy" >&2
+  echo "error: htn_quest.so is not SBPFv3 (e_flags=$FLAGS); it will fail to deploy" >&2
   exit 1
 fi
-echo "built badge_escrow (SBPFv3) + IDL"
+echo "built htn_quest (SBPFv3) + IDL"

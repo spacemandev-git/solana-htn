@@ -1,37 +1,30 @@
 import type { DisconnectRequest, Session, SyncRequest, SyncResponse } from '@htn/shared';
 import { pairingUrl } from '../config.ts';
-import { animalFor, upsertBadge } from './badges.ts';
+import { upsertBadge } from './badges.ts';
 import type { ServiceContext } from './context.ts';
 import { nowIso } from './context.ts';
-import { itemCount, recordVisit } from './items.ts';
-import {
-  buildSessionView,
-  endSessionAtStation,
-  startOrRefreshSession,
-} from './sessions.ts';
+import { getQuestSubmission } from './quests.ts';
+import { buildSessionView, endSessionAtStation, startOrRefreshSession } from './sessions.ts';
 import { upsertStation } from './stations.ts';
-import { ensureVault } from './vaults.ts';
 
 /** Pushes the current state of a session to any attached PWA. */
 export function publishState(ctx: ServiceContext, session: Session): void {
-  const view = buildSessionView(ctx.db, session);
+  const view = buildSessionView(ctx, session);
   if (view) ctx.live.publish(session.pairingCode, { type: 'state', view });
 }
 
 /**
  * A Sync Station saw a badge.
  *
- * Idempotent by construction: the badge/station upserts are conditional, the
- * visit insert is guarded by a unique constraint, and an already-active session
- * at the same station keeps its pairing code. Hubs can therefore re-POST as often
- * as they like (they do — every few seconds while a hacker is in range).
+ * Idempotent by construction: the badge/station upserts are conditional and an
+ * already-active session at the same station keeps its pairing code. Hubs can
+ * therefore re-POST as often as they like.
  */
-export async function handleSync(ctx: ServiceContext, request: SyncRequest): Promise<SyncResponse> {
+export function handleSync(ctx: ServiceContext, request: SyncRequest): SyncResponse {
   const at = nowIso();
 
   const { badge } = upsertBadge(ctx.db, request.badge, at);
   upsertStation(ctx.db, request.stationId, request.stationName, at);
-  await ensureVault(ctx.db, ctx.chain, badge, at);
 
   const { session, superseded } = startOrRefreshSession(
     ctx.db,
@@ -40,21 +33,8 @@ export async function handleSync(ctx: ServiceContext, request: SyncRequest): Pro
     at,
   );
 
-  // The hacker crossed the wilderness: tell the old station's page it went stale.
   if (superseded) {
     ctx.live.publish(superseded.pairingCode, { type: 'disconnected', at });
-  }
-
-  const granted = await recordVisit(ctx.db, ctx.chain, {
-    badgeId: badge.badgeId,
-    stationId: request.stationId,
-    pairingCode: session.pairingCode,
-    rssi: request.rssi,
-    at,
-  });
-
-  if (granted) {
-    ctx.live.publish(session.pairingCode, { type: 'item', item: granted });
   }
   publishState(ctx, session);
 
@@ -62,11 +42,7 @@ export async function handleSync(ctx: ServiceContext, request: SyncRequest): Pro
     pairingCode: session.pairingCode,
     url: pairingUrl(ctx.config, session.pairingCode),
     badgeId: badge.badgeId,
-    animal: animalFor(badge).id,
-    granted: granted
-      ? [{ name: granted.name, slot: granted.slot, rarity: granted.rarity }]
-      : [],
-    itemCount: itemCount(ctx.db, badge.badgeId),
+    questStatus: getQuestSubmission(ctx.db, badge.badgeId)?.status ?? null,
   };
 }
 

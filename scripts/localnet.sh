@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boots a local validator, deploys badge_escrow, and prints the env the server needs.
+# Boots a local validator, deploys htn_quest, and prints its RPC + program id.
 #
 # Usage: ./scripts/localnet.sh [start|stop|env]
 set -euo pipefail
@@ -8,8 +8,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEYS="$ROOT/.solana-keys"
 LEDGER="$ROOT/program/test-ledger"
 RPC="http://127.0.0.1:8899"
-PROGRAM_SO="$ROOT/program/target/deploy/badge_escrow.so"
-PROGRAM_KEYPAIR="$ROOT/program/target/deploy/badge_escrow-keypair.json"
+PROGRAM_SO="$ROOT/program/target/deploy/htn_quest.so"
+PROGRAM_KEYPAIR="$ROOT/program/target/deploy/htn_quest-keypair.json"
 
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
 
@@ -34,7 +34,7 @@ start() {
   solana airdrop 100 --keypair "$KEYS/authority.json" --url "$RPC" >/dev/null
   solana program deploy "$PROGRAM_SO" \
     --program-id "$PROGRAM_KEYPAIR" --keypair "$KEYS/authority.json" --url "$RPC" >/dev/null
-  echo "deployed badge_escrow"
+  echo "deployed htn_quest"
   env_vars
 }
 
@@ -45,8 +45,7 @@ stop() {
 
 env_vars() {
   echo "SOLANA_RPC_URL=$RPC"
-  echo "SOLANA_PROGRAM_ID=$(solana address -k "$PROGRAM_KEYPAIR")"
-  echo "SOLANA_AUTHORITY_SECRET_KEY=$(bun "$ROOT/scripts/to-base58.ts" "$KEYS/authority.json")"
+  echo "PROGRAM_ID=$(solana address -k "$PROGRAM_KEYPAIR")"
 }
 
 case "${1:-start}" in

@@ -1,14 +1,16 @@
-import { createChainClient } from '@htn/chain';
+import { createQuestChain } from '@htn/chain';
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { openDatabase } from './db/index.ts';
 
 const config = loadConfig();
 const db = openDatabase(config.databasePath);
-const chain = await createChainClient({
+const chain = await createQuestChain({
+  cluster: config.solanaCluster,
   rpcUrl: config.solanaRpcUrl,
-  authoritySecretKey: config.solanaAuthoritySecretKey,
-  programId: config.programId,
+  payerSecretKey: config.x402PayerSecretKey,
+  usdcMint: config.usdcMint,
+  maxPaymentAtomic: config.maxRewardAtomic,
 });
 
 const app = buildApp({ db, chain, config });

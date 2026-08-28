@@ -1,0 +1,170 @@
+{
+  "address": "9UkH8LeXw8jpQFZVNS3yk9LmkzsFAh54MK7SGP8jTsfY",
+  "metadata": {
+    "name": "htn_quest",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Hack the North attendee quest program"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "Creates the singleton quest PDA and stores its initial message."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "quest",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "set_message",
+      "docs": [
+        "Replaces the quest message. Only the authority recorded at initialize may call it."
+      ],
+      "discriminator": [
+        59,
+        44,
+        48,
+        192,
+        49,
+        29,
+        155,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "quest",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "quest"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Quest",
+      "discriminator": [
+        68,
+        78,
+        51,
+        23,
+        204,
+        27,
+        76,
+        132
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotAuthority",
+      "msg": "signer is not the quest authority"
+    },
+    {
+      "code": 6001,
+      "name": "MessageTooLong",
+      "msg": "message exceeds 256 bytes"
+    },
+    {
+      "code": 6002,
+      "name": "MessageEmpty",
+      "msg": "message must not be empty"
+    }
+  ],
+  "types": [
+    {
+      "name": "Quest",
+      "docs": [
+        "The singleton quest state stored at the `[b\"quest\"]` PDA."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "The only signer allowed to replace `message`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "message",
+            "docs": [
+              "UTF-8 quest message, encoded by Borsh as `u32` byte length + bytes."
+            ],
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,109 +1,86 @@
-# Driving the system without hardware
+# Driving the quest without hardware
 
-`/sim` is the operator console. It fakes badges and Sync Stations against the
-real server, so the whole loop can be built, demoed and debugged before any
-ESP32 is in the room — and used as a control panel when they are.
+`/sim` is the operator console for the complete badge-to-quest flow. It sends
+the same sync and disconnect requests as an ESP32 beacon, produces the same
+pairing QR, and watches the same quest status returned by the server.
 
-Open <http://localhost:5173/sim> after `bun run dev`.
+Start the app, then open <http://localhost:5173/sim>:
+
+```bash
+bun run dev
+```
 
 ## Setup
 
-The console needs the Sync Station API key, because it is impersonating a
-station and `/api/station/sync` is authenticated. Paste `STATION_API_KEY` (default
-`dev-station-key`) into the API key field; it is persisted to `localStorage`
-along with your rosters and selection, because live demos involve a lot of
-reloads.
+For the quickest local demo, enable **Use `/api/dev/*`** in the simulator.
+These development-only routes do not require a station key. To exercise the
+authenticated route instead, leave that switch off and enter
+`STATION_API_KEY` (the development default is `dev-station-key`). The
+selection, fake rosters, route mode, and key are kept in browser storage.
 
-The header shows the server's `/api/health`, including `chainEnabled` — so it is
-never ambiguous whether writes are reaching a chain or only SQLite.
+The header reports `GET /api/health`, including the cluster and whether chain
+access is enabled. The simulator polls the badge table every three seconds; the
+Auto switch can pause polling.
 
-## Seeded rosters
+## Controls
 
-Six hubs and six hackers ship as defaults, and you can add your own:
+- **Sync badge** sends the selected fake badge and station to
+  `POST /api/dev/sync` or `POST /api/station/sync`. The response contains a
+  pairing code, which can be opened directly or displayed as a QR.
+- **Disconnect** ends the selected badge's active session. This changes the
+  phone header to OFFLINE, but an in-flight verification continues on the
+  server and its result is retained.
+- **Edit roster** adds or removes fake stations and badges. Restore seeded
+  roster returns to the six built-in examples without clearing the station key.
+- **Reset server** calls `POST /api/dev/reset` and wipes badges, sessions, and
+  quest submissions.
+- **Badge table** shows each badge's active station, pairing code, and quest
+  state: `—`, `verifying`, `completed`, or `failed`.
 
-| Stations | Badges |
-| --- | --- |
-| `e7-atrium` — E7 Atrium | `htn-0417` Ada Nkemelu |
-| `slc-great-hall` — SLC Great Hall | `htn-0932` Rohan Mehta |
-| `mc-comfy` — MC Comfy Lounge | `htn-1180` Sofia Petrova |
-| `dc-fishbowl` — DC Fishbowl | `htn-2044` Kai Tanaka |
-| `e5-hardware-bay` — E5 Hardware Bay | `htn-3311` Jordan Blake |
-| `midnight-ramen` — Midnight Ramen Bar | `htn-5079` Mei Lin |
+The raw response and operator log make request failures visible without opening
+browser developer tools.
 
-Because content is derived from ids, these are stable: `htn-0417` gets the same
-animal every time you reset, and the same station always yields the same item
-for the same badge.
+## Full offline quest demo
 
-## What you can do
+When the server has no chain payer configured, it uses its disabled chain
+client. Program and account reads are skipped, and payment is simulated. The
+development mock vendor accepts that simulated payment, so the entire UI and
+verification pipeline can be demonstrated without RPC, USDC, or a deployed
+program.
 
-- **Sync** — fires `POST /api/station/sync` for the selected badge at the
-  selected station, exactly as a hub would, and shows the raw JSON response.
-- **Disconnect** — fires `POST /api/station/disconnect`, simulating the hacker
-  walking into the wilderness.
-- **QR / open phone view** — turns the returned pairing code into a scannable
-  code and a link to `/s/:pairingCode`, so you can point a real phone at it.
-- **Roster table** — every badge with its animal, item count, stations visited,
-  active session and vault/claim status. Auto-refreshes every 3s.
-- **Badge detail** — click through for the full inventory, visits and vault.
-- **Reset** — `POST /api/dev/reset` wipes the database. Dev-only route.
+1. Start `bun run dev`, open `/sim`, and enable **Use `/api/dev/*`**.
+2. Click **Reset server** for a clean run.
+3. Choose a badge and station, then click **Sync badge**.
+4. Open the returned `/s/:pairingCode` link or scan its QR.
+5. In the quest form, submit:
 
-## A demo that shows everything
+   - endpoint URL: `http://localhost:3000/api/dev/vendor`
+   - program ID: `11111111111111111111111111111111`
 
-1. Sync `htn-0417` at `e7-atrium`. They're assigned an animal and granted their
-   first item. Note the pairing code.
-2. Open `/s/<code>` on a phone (or a second browser window). It shows the animal,
-   the item, and a LIVE indicator.
-3. Sync `htn-0417` at `slc-great-hall`. Watch the first phone view flip to
-   **disconnected** over SSE — the hacker crossed the wilderness — and a new
-   pairing code appear. Open that one: two items now.
-4. Sync `htn-0417` at `e7-atrium` again. `granted` comes back empty: a hub you've
-   already cleared gives no loot. This is the `visits` unique constraint doing
-   the work, not application logic.
-5. Sync a second badge at the same station. Different item — loot is seeded by
-   badge *and* station, so no two hackers get the same thing.
-6. Go to `/wallet`, connect a Solana wallet, and claim. The vault's owner goes
-   from nobody to the hacker. Withdraw an item out of escrow.
-7. Hit Disconnect and watch the phone view move to the wilderness state.
+6. Watch the phone's verification log advance through program, state,
+   challenge, payment, and proof. The simulator table changes from
+   `verifying` to `completed`.
+7. The outcome shows **simulated payment** and the mock proof message. No funds
+   move in this mode.
 
-## Without a validator
+The phone must be able to reach the server origin. A phone on the same LAN
+cannot use its own `localhost`; open the PWA through the development machine's
+LAN address and submit that machine's address for the mock vendor instead.
 
-Everything above works with the chain disabled — `/api/health` will report
-`chainEnabled: false`, vault addresses stay null, and the wallet page does the
-signature binding without submitting a transaction. That is deliberate: at a
-hackathon the venue network is the least reliable component in the system, and
-the badge experience must not depend on it.
+## Disconnect during verification
 
-To demo the on-chain half:
+To demonstrate the server-side lifecycle, submit the quest and immediately
+click **Disconnect** in the simulator. The phone reports that the station signal
+was lost while the verifier continues. Reconnect the stream or sync the same
+badge again to see the stored result. Disconnecting never cancels verification.
 
-```bash
-bun run localnet     # validator + deploy, prints the env
-```
+## Chain-enabled demo
 
-Paste the printed variables into `.env`, restart the server, and `/api/health`
-flips to `chainEnabled: true`. Vault and item addresses then appear in the badge
-detail view, and claiming actually moves ownership on chain.
+With the payer secret and RPC configuration present, `chainEnabled` becomes
+`true`. The mock vendor is intended for the offline path; use the deployed
+starter endpoint and its real program ID for an on-chain run. The agent checks
+the deployment, reads the `["quest"]` PDA, validates the x402 challenge, pays
+once, and compares the paid response with the on-chain message.
 
-## Curl equivalents
-
-Useful when testing hub firmware directly:
-
-```bash
-# a badge arrives at a hub
-curl -X POST http://localhost:3000/api/station/sync \
-  -H 'content-type: application/json' \
-  -H 'x-station-key: dev-station-key' \
-  -d '{
-        "stationId": "e7-atrium",
-        "stationName": "E7 Atrium",
-        "badge": { "badgeId": "htn-0417", "name": "Ada Nkemelu", "email": "ada.nkemelu@uwaterloo.ca" },
-        "rssi": -47
-      }'
-
-# it walks out of range
-curl -X POST http://localhost:3000/api/station/disconnect \
-  -H 'content-type: application/json' \
-  -H 'x-station-key: dev-station-key' \
-  -d '{ "stationId": "e7-atrium", "badgeId": "htn-0417" }'
-```
-
-See [API.md](API.md) for the full surface.
+See [QUEST.md](QUEST.md) for the participant walkthrough and [API.md](API.md)
+for the HTTP contract.

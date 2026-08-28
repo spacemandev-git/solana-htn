@@ -1,20 +1,13 @@
 import type {
-	Animal,
-	Badge,
 	BadgeSummary,
-	BuildTxResponse,
-	ClaimRequest,
-	ClaimTxRequest,
+	Cluster,
 	DisconnectRequest,
-	Item,
-	Session,
+	QuestSubmission,
+	QuestSubmitRequest,
 	SessionView,
 	Station,
 	SyncRequest,
-	SyncResponse,
-	Vault,
-	WithdrawRequest,
-	WithdrawTxRequest
+	SyncResponse
 } from '@htn/shared';
 import { API_KEY_HEADER } from '@htn/shared';
 
@@ -80,8 +73,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		const dead = res.status >= 500 && parsed === null;
 		if (dead) throw new ApiFailure(SERVER_DOWN_HINT, res.status, undefined, true);
 		const code = typeof body?.error === 'string' ? body.error : null;
-		const message =
-			(code && ERROR_COPY[code]) ?? code ?? `Request failed (${res.status}).`;
+		const message = (code && ERROR_COPY[code]) ?? code ?? `Request failed (${res.status}).`;
 		const detail = typeof body?.detail === 'string' ? body.detail : undefined;
 		throw new ApiFailure(message, res.status, detail);
 	}
@@ -96,15 +88,12 @@ const ERROR_COPY: Record<string, string> = {
 	invalid_request: 'The server rejected that request body.',
 	not_found: 'That endpoint does not exist on the server.',
 	session_not_found: 'No session for that pairing code.',
+	session_ended: 'This pairing session has ended. Sync the badge again for a fresh code.',
 	session_incomplete: 'That session is missing its badge or station record.',
 	badge_not_found: 'No badge with that id.',
-	vault_not_found: 'That badge has no vault yet.',
-	vault_not_claimed: 'Claim the vault with your wallet first.',
-	vault_already_claimed: 'That vault is already claimed by a different wallet.',
-	not_vault_owner: 'That vault belongs to a different wallet.',
-	bad_signature: 'The wallet signature did not verify.',
-	item_not_found: 'That item does not belong to this badge.',
-	item_already_withdrawn: 'That item has already left escrow.',
+	quest_verifying: 'This quest is already being verified.',
+	quest_already_completed: 'This quest is already complete.',
+	quest_already_paid: 'The agent already paid this badge and cannot pay it twice.',
 	internal_error: 'The server hit an unexpected error.'
 };
 
@@ -133,7 +122,9 @@ export function getStations(): Promise<Station[]> {
 export interface Health {
 	ok: boolean;
 	chainEnabled: boolean;
-	programId: string;
+	cluster: Cluster;
+	payerAddress: string | null;
+	maxRewardAtomic: number;
 	badgeCount: number;
 }
 
@@ -141,45 +132,16 @@ export function getHealth(): Promise<Health> {
 	return request<Health>('/api/health');
 }
 
-/** One row of `GET /api/badges/:badgeId`'s `visits` array. */
-export interface BadgeVisit {
-	badgeId: string;
-	stationId: string;
-	stationName: string | null;
-	firstSeenAt: string;
-	lastSeenAt: string;
-	visitCount: number;
-	lastRssi: number | null;
-}
-
-/** `GET /api/badges/:badgeId` — an inline server shape, not a shared type. */
-export interface BadgeDetailResponse {
-	badge: Badge;
-	animal: Animal;
-	items: Item[];
-	visits: BadgeVisit[];
-	vault: Vault | null;
-	sessions: Session[];
-}
-
-/** The same payload, plus the bits the dashboard derives from it. */
-export interface BadgeDetail extends BadgeDetailResponse {
-	activeSession: Session | null;
-}
-
-export async function getBadgeDetail(badgeId: string): Promise<BadgeDetail> {
-	const raw = await request<BadgeDetailResponse>(`/api/badges/${encodeURIComponent(badgeId)}`);
-	const sessions = raw.sessions ?? [];
-	return {
-		...raw,
-		items: raw.items ?? [],
-		visits: raw.visits ?? [],
-		sessions,
-		activeSession: sessions.find((s) => s.active) ?? null
-	};
-}
-
 /* ----------------------------- writes ----------------------------- */
+
+export function submitQuest(
+	body: QuestSubmitRequest
+): Promise<{ submission: QuestSubmission }> {
+	return request<{ submission: QuestSubmission }>('/api/quest/submit', {
+		method: 'POST',
+		body: JSON.stringify(body)
+	});
+}
 
 /**
  * `/api/dev/sync` and `/api/dev/disconnect` are the same handlers without the
@@ -220,56 +182,8 @@ export function stationDisconnect(
 	);
 }
 
-/**
- * Builds the unsigned `claim_vault` transaction. `transaction` is base64 of a
- * serialized legacy transaction, or null when the server has no chain client.
- */
-export function buildClaimTx(body: ClaimTxRequest): Promise<BuildTxResponse> {
-	return request<BuildTxResponse>('/api/vault/claim-tx', {
-		method: 'POST',
-		body: JSON.stringify(body)
-	});
-}
-
-/** Builds the unsigned `withdraw_item` transaction for one item. */
-export function buildWithdrawTx(body: WithdrawTxRequest): Promise<BuildTxResponse> {
-	return request<BuildTxResponse>('/api/vault/withdraw-tx', {
-		method: 'POST',
-		body: JSON.stringify(body)
-	});
-}
-
-export function claimVault(body: ClaimRequest): Promise<{ vault: Vault }> {
-	return request<{ vault: Vault }>('/api/vault/claim', {
-		method: 'POST',
-		body: JSON.stringify(body)
-	});
-}
-
-export function withdrawItem(body: WithdrawRequest): Promise<{ item: Item; wallet: string }> {
-	return request<{ item: Item; wallet: string }>('/api/vault/withdraw', {
-		method: 'POST',
-		body: JSON.stringify(body)
-	});
-}
-
 export function devReset(): Promise<unknown> {
 	return request<unknown>('/api/dev/reset', { method: 'POST' });
-}
-
-/** Decodes a base64 transaction from the server into the bytes a wallet signs. */
-export function decodeBase64(base64: string): Uint8Array {
-	const binary = atob(base64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-	return bytes;
-}
-
-/** Encodes signed transaction bytes for an RPC `sendTransaction` call. */
-export function encodeBase64(bytes: Uint8Array): string {
-	let binary = '';
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary);
 }
 
 /** URL of the SSE stream for a pairing code. */

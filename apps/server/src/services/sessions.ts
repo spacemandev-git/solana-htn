@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import type { Database } from 'bun:sqlite';
-import type { Item, Session, SessionView } from '@htn/shared';
+import { CLUSTERS, type Session, type SessionView } from '@htn/shared';
 import { all, one, run, toSession } from '../db/index.ts';
 import type { SessionRow } from '../db/schema.ts';
-import { animalFor, getBadge } from './badges.ts';
-import { listItems, newItemIdsForSession } from './items.ts';
+import { getBadge } from './badges.ts';
+import type { ServiceContext } from './context.ts';
+import { getQuestSubmission } from './quests.ts';
 import { getStation } from './stations.ts';
-import { getVault } from './vaults.ts';
 
 /** Crockford-ish: no 0/O/1/I/L, so a code read off a badge screen can't be mistyped. */
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -125,27 +125,28 @@ export function endSessionAtStation(
 }
 
 /** Assembles everything the PWA renders. Null when a referenced row is missing. */
-export function buildSessionView(db: Database, session: Session): SessionView | null {
-  const badge = getBadge(db, session.badgeId);
-  const station = getStation(db, session.stationId);
-  const vault = getVault(db, session.badgeId);
-  if (!badge || !station || !vault) return null;
-
-  const animal = animalFor(badge);
-  const items: Item[] = listItems(db, badge.badgeId);
+export function buildSessionView(ctx: ServiceContext, session: Session): SessionView | null {
+  const badge = getBadge(ctx.db, session.badgeId);
+  const station = getStation(ctx.db, session.stationId);
+  if (!badge || !station) return null;
 
   return {
     session,
     badge,
     station,
-    animal: { id: animal.id, name: animal.name, emoji: animal.emoji, blurb: animal.blurb },
-    items,
-    newItemIds: newItemIdsForSession(db, session.pairingCode),
-    vault,
+    quest: getQuestSubmission(ctx.db, badge.badgeId),
+    env: {
+      chainEnabled: ctx.chain.enabled,
+      cluster: ctx.config.solanaCluster,
+      network: CLUSTERS[ctx.config.solanaCluster].caip2,
+      usdcMint: ctx.config.usdcMint,
+      maxRewardAtomic: ctx.config.maxRewardAtomic,
+      payerAddress: ctx.chain.payerAddress,
+    },
   };
 }
 
-export function sessionViewByCode(db: Database, pairingCode: string): SessionView | null {
-  const session = getSession(db, pairingCode);
-  return session ? buildSessionView(db, session) : null;
+export function sessionViewByCode(ctx: ServiceContext, pairingCode: string): SessionView | null {
+  const session = getSession(ctx.db, pairingCode);
+  return session ? buildSessionView(ctx, session) : null;
 }

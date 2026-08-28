@@ -504,18 +504,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "badge_escrow"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-v2-testing",
- "sha2 0.10.9",
- "solana-clock",
- "solana-program-log",
- "solana-pubkey 3.0.0",
-]
-
-[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1325,6 +1313,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest 0.10.7",
+]
+
+[[package]]
+name = "htn_quest"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-v2-testing",
+ "solana-program-log",
+ "solana-pubkey 3.0.0",
 ]
 
 [[package]]

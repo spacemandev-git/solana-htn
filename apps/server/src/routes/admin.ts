@@ -1,16 +1,10 @@
 import { Hono } from 'hono';
 import { fail } from '../http.ts';
-import {
-  animalFor,
-  badgeCount,
-  getBadge,
-  listBadgeSummaries,
-} from '../services/badges.ts';
+import { badgeCount, getBadge, listBadgeSummaries } from '../services/badges.ts';
 import type { ServiceContext } from '../services/context.ts';
-import { listItems, listVisits } from '../services/items.ts';
+import { getQuestSubmission } from '../services/quests.ts';
 import { listSessionsForBadge } from '../services/sessions.ts';
 import { listStations } from '../services/stations.ts';
-import { emptyVault, getVault } from '../services/vaults.ts';
 
 /** Read-only surfaces for the operator dashboard, the simulator and monitoring. */
 export function adminRoutes(ctx: ServiceContext): Hono {
@@ -22,15 +16,10 @@ export function adminRoutes(ctx: ServiceContext): Hono {
     const badge = getBadge(ctx.db, c.req.param('badgeId'));
     if (!badge) return fail(c, 404, 'badge_not_found', 'no badge with that id');
 
-    const animal = animalFor(badge);
     return c.json({
       badge,
-      animal: { id: animal.id, name: animal.name, emoji: animal.emoji, blurb: animal.blurb },
-      items: listItems(ctx.db, badge.badgeId),
-      visits: listVisits(ctx.db, badge.badgeId),
-      // Same substitution as /api/badges, so both endpoints agree on the shape.
-      vault: getVault(ctx.db, badge.badgeId) ?? emptyVault(badge.badgeId),
       sessions: listSessionsForBadge(ctx.db, badge.badgeId),
+      quest: getQuestSubmission(ctx.db, badge.badgeId),
     });
   });
 
@@ -40,7 +29,9 @@ export function adminRoutes(ctx: ServiceContext): Hono {
     c.json({
       ok: true,
       chainEnabled: ctx.chain.enabled,
-      programId: ctx.chain.programId,
+      cluster: ctx.config.solanaCluster,
+      payerAddress: ctx.chain.payerAddress,
+      maxRewardAtomic: ctx.config.maxRewardAtomic,
       badgeCount: badgeCount(ctx.db),
     }),
   );

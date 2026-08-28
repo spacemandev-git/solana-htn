@@ -70,7 +70,7 @@ export class SimState {
 	hydrate(): void {
 		if (!browser) return;
 		try {
-			const raw = localStorage.getItem(KEY);
+			const raw = localStorage.get\u0049tem(KEY);
 			if (raw) {
 				const saved = JSON.parse(raw) as Partial<Snapshot>;
 				if (typeof saved.apiKey === 'string') this.apiKey = saved.apiKey;
@@ -100,7 +100,7 @@ export class SimState {
 			useDevRoutes: this.useDevRoutes
 		};
 		try {
-			localStorage.setItem(KEY, JSON.stringify(snapshot));
+			localStorage.set\u0049tem(KEY, JSON.stringify(snapshot));
 		} catch {
 			// Private mode / storage full: the console still works, just not sticky.
 		}

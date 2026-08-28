@@ -1,136 +1,135 @@
 # Architecture
 
-## The world
+## The activation
 
-Hack the North attendees wear an ESP32-C3 badge. Scattered around the venue are
-**Sync Stations** — ESP32 hubs that badges announce themselves to over ESP-NOW.
+Hack the North attendees wear an ESP32-C3 badge. Around the venue are
+**beacons** — ESP32 hubs that badges announce themselves to over ESP-NOW. Walk
+up to one, the beacon reports your badge to the server, and your badge gets a
+QR code. Scan it and your phone is live-paired to the event over SSE.
 
-The stations are **hubs**: towns, where you meet NPCs, pick up quests, and find
-points of interest. The space between them is **wilderness**, where you have no
-station and have to find other hackers. Walking between hubs is the core loop,
-and the badge knows which one you are standing in.
+There is exactly **one quest**, and it pays real money:
 
-Mechanically: your badge gives you an animal. Every *new* station you reach
-dresses that animal in one more funky piece of clothing, minted into an on-chain
-escrow vault. Connect a wallet whenever you like and the assets become yours.
+> Deploy a tiny Anchor program that stores a message on Solana. Wrap it in an
+> HTTP endpoint paywalled with **x402**. Submit the URL. Our agent calls your
+> endpoint exactly once, pays your price in USDC (up to $1, straight to your
+> wallet), and verifies the paid response against the chain.
+
+The reward *is* the payment. There is no scoreboard to update and no asset to
+custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
 
 ## Pieces
 
 ```
- ESP32 badge ──ESP-NOW──▶ Sync Station ──HTTPS POST──▶ apps/server
-                                          x-station-key    │
-                                                           │ pairing code + URL
-                                                           ▼
-                        hacker's phone ◀──── SSE ──── apps/pwa  /s/:pairingCode
-                                │
-                                │ wallet signs
-                                ▼
-                          Solana ◀── packages/chain ── program/ (badge_escrow)
+ ESP32 badge ──ESP-NOW──▶ Beacon ──HTTPS POST──▶ apps/server
+                                   x-station-key     │
+                                                     │ pairing code + URL (QR)
+                                                     ▼
+                    hacker's phone ◀──── SSE ──── apps/pwa  /s/:pairingCode
+                          │ submits { endpointUrl, programId }
+                          ▼
+                    apps/server verification agent
+                          │ 1─2. RPC reads            3─5. HTTP + x402 payment
+                          ▼                                ▼
+                    Solana cluster                hacker's starter/ endpoint
+                    (their htn_quest program)     (402 → X-PAYMENT → paid 200)
 ```
 
 | Package | Role |
 | --- | --- |
-| `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). SSE hub for live sessions. Holds the mint authority. |
-| `apps/pwa` | SvelteKit 5 mobile PWA: the live session view, the wallet claim page, and the operator/simulator dashboard. |
-| `packages/shared` | The contract: domain types, zod API schemas, and the deterministic content catalog. Imported by everything. |
-| `packages/chain` | TypeScript client for `badge_escrow` — PDA derivation, instruction encoding, account decoding. |
-| `program` | The Anchor 2.0 program. See [PROGRAM.md](PROGRAM.md). |
+| `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). SSE hub. Runs the verification agent and holds the x402 payer key. |
+| `apps/pwa` | SvelteKit 5 terminal-themed PWA: the quest console, plus the operator/simulator dashboard. |
+| `packages/shared` | The contract: domain types, zod API schemas, and the pinned quest constants (PDA seed, byte offsets, cluster/network/USDC ids). |
+| `packages/chain` | The x402 + Solana module: 402 challenge parsing/validation, the paying `fetch`, and raw RPC reads of hacker programs. |
+| `program` | `htn_quest`, the Anchor 2.0 reference program hackers deploy. See [PROGRAM.md](PROGRAM.md). |
+| `starter` | The kit hackers copy: an x402-paywalled Hono server + a `set-message` script. See [QUEST.md](QUEST.md). |
+
+## The verification pipeline
+
+A submission is `{ endpointUrl, programId }`, authenticated by an active
+pairing code. The agent then runs five steps, streaming each over SSE so the
+phone renders a live terminal log:
+
+1. **program** — `programId` is a live, executable account on the cluster.
+2. **state** — `PDA(["quest"], programId)` exists, is owned by that program,
+   and holds a borsh string at byte offset 40 (8 discriminator + 32 authority).
+3. **challenge** — a plain GET returns HTTP 402 whose terms are acceptable:
+   `exact` scheme, this cluster's network id (v1 or CAIP-2), the canonical
+   USDC mint, amount ≤ the cap, a `payTo`.
+4. **payment** — the wrapped fetch pays over x402 and retries. The settlement
+   signature from `X-PAYMENT-RESPONSE` is recorded.
+5. **proof** — the paid response's JSON `message` equals the on-chain message.
+
+Order is the security model: everything cheap and read-only runs **before**
+money moves, so the only post-payment failure mode is a hacker whose endpoint
+lies about their own chain state.
 
 ## Key decisions
 
-### Content is derived, not stored
+### Pay-once is a database fact, not a code path
 
-`animalForBadge(badgeId)` and `itemForVisit(badgeId, stationId)` in
-`packages/shared/src/catalog.ts` are pure functions over an FNV-1a hash. The
-same badge always gets the same animal; the same badge at the same station
-always gets the same item.
+`quest_submissions.paid` is set in the same synchronous write that records the
+settlement signature, *before* the proof step is evaluated. Any later
+submission for that badge — retry, resubmit, crash-recovery — sees `paid = 1`
+and refuses to reach the payment step. The cap (`MAX_REWARD_USD`, default $1)
+is enforced twice more, independently: at challenge validation and again
+inside `packages/chain` right before paying. The server can lose at most the
+cap per badge, once.
 
-This means no content state needs syncing between the server, the PWA, the
-badge firmware, and the chain — each can derive it. The database records *that*
-an item was granted; the catalog decides *what* it was.
+### The x402 knowledge lives in one package
 
-### "New station" is a database constraint, not a code path
-
-The `visits` table has a unique index on `(badge_id, station_id)`. Granting an
-item is an `INSERT ... ON CONFLICT DO NOTHING RETURNING id`: the insert either
-wins (first visit — grant the item) or does nothing (repeat sync — grant
-nothing). Two hubs reporting the same badge at once cannot double-grant, because
-the race is resolved by SQLite rather than by application logic.
-
-The on-chain `mint_item` has an independent guard (`index == vault.item_count`),
-so even a bug in the server cannot inflate an inventory on chain.
+`packages/chain` is the only code that knows what a 402 challenge looks like
+(v1 `maxAmountRequired` and v2 `amount` envelopes, body or header), how to
+build an `X-PAYMENT`, or how to talk to an RPC. The server consumes the frozen
+`QuestChain` interface (`packages/chain/src/types.ts`) and writes its results
+straight into SQLite. Swapping facilitator ecosystems or protocol versions
+never touches `apps/server`.
 
 ### The chain is optional at runtime, mandatory in semantics
 
-`createChainClient()` returns a `DisabledChainClient` when `SOLANA_RPC_URL` or
-the authority key is missing. Every write then resolves with a `null` signature
-and the server records "not yet on chain" rather than failing.
+No `X402_PAYER_SECRET_KEY` → the disabled client: chain reads are skipped,
+and the payment step sends a simulated `X-PAYMENT` that only the dev mock
+vendor (`GET /api/dev/vendor`) accepts. The whole badge → beacon → phone →
+quest loop is demoable offline via `/sim`, which matters at a hackathon where
+venue wifi is the least reliable component. `/api/health` reports
+`chainEnabled` so the mode is never ambiguous.
 
-That keeps the badge → station → phone loop fully demoable with no validator —
-which matters at a hackathon, where the venue wifi is the least reliable
-component in the system. `/api/health` reports `chainEnabled` so it is never
-ambiguous which mode you are in.
+### Verification is asynchronous, progress is push
 
-Chain writes also happen *after* the local grant, so a flaky RPC can never cost
-a hacker their loot. `assetAddress` / `signature` stay null until the write
-lands.
+`POST /api/quest/submit` answers 202 immediately; the pipeline runs in the
+background and publishes `quest-progress` / `quest-result` events to the
+session's SSE channel. Walking away from the beacon ends the *session*, not
+the verification — the agent finishes regardless, and the result is waiting at
+the next sync.
 
-### The server can mint but cannot take
+### The server verifies the hacker's program by raw bytes, not by IDL
 
-The server holds the registry authority: it opens vaults and mints items. It
-deliberately has **no** ability to claim a vault or withdraw an item — both
-instructions require the hacker's wallet to sign.
-
-So the claim flow is split. The server *builds* the unsigned transaction
-(`POST /api/vault/claim-tx`), the browser wallet signs and submits it, and the
-server separately records the binding after verifying an ed25519 signature over
-a fixed message (`claimMessage()` in `packages/shared`, so the server and PWA
-can never disagree about the bytes).
-
-Handing out an unsigned transaction grants nothing, which is why that endpoint
-needs no authentication beyond knowing the pairing code.
-
-### Sessions are live, and end when you walk away
-
-A station POSTs `sync` when a badge is in range and `disconnect` when it drops
-out. A partial unique index on `sessions(badge_id) WHERE active = 1` enforces
-one live pairing per badge, so walking to a new hub ends the old session and
-pushes a `disconnected` event down its SSE channel.
-
-The pairing code is short and human-readable (6 chars, no `0/O/1/I/L`) because
-it has to survive being read off a small screen or a QR code.
+Hackers may build with our Anchor 2.0 reference or anything ABI-compatible.
+The agent never loads their IDL: it checks the account at `PDA(["quest"])` is
+owned by their program and borsh-decodes the string at the pinned offset
+(`QUEST_MESSAGE_OFFSET` in `packages/shared`). The program test suite asserts
+that exact offset against LiteSVM, so the contract cannot drift silently.
 
 ## Data flow: one hacker, one afternoon
 
-1. Hacker walks into range of **E7 Foundry**. The station POSTs
-   `/api/station/sync` with its id and the badge's id, name, and email.
-2. Server upserts the badge (assigning `loon` via `animalForBadge`), opens the
-   escrow vault on chain, records the visit, grants **Glacial Flannel**
-   (`itemForVisit`), mints it into the vault, and returns pairing code `4CW5G5`
-   plus `http://…/s/4CW5G5`.
-3. Hacker opens that URL on their phone. The PWA loads the `SessionView` and
-   subscribes to the SSE stream. It shows their loon, their flannel, and a LIVE
-   indicator.
-4. Hacker wanders into the wilderness. The station POSTs `disconnect`; the
-   phone flips to the wilderness state over SSE.
-5. Hacker reaches **MC Great Hall**. New station → new visit → **Recursive
-   Firefly Swarm**, minted as item index 1. New pairing code, new live session.
-6. Hacker returns to E7 Foundry. Not a new station, so no item — but a fresh
-   live session.
-7. Hacker opens `/wallet`, connects a Solana wallet, and signs. The vault's
-   `owner` goes from the zero address to their pubkey. From here the server can
-   no longer move any of it.
-8. Hacker withdraws the flannel to their own custody. `item.withdrawn = 1`.
+1. Hacker taps their badge near the **registration beacon**. It POSTs
+   `/api/station/sync`; the badge screen shows a QR for `/s/4CW5G5`.
+2. The phone opens the quest console: the brief, the env facts (cluster, USDC
+   mint, reward cap, the agent's address), and a submission prompt.
+3. Hacker clones the repo, deploys `htn_quest` to devnet, runs
+   `bun run set-message "gm htn"`, starts `starter/` with their wallet as
+   `payTo`, and tunnels it.
+4. They submit the URL + program id. The console streams:
+   `✔ program deployed on-chain`, `✔ quest PDA holds a message`,
+   `✔ endpoint answers 402 with valid terms — $1.00 to 7f9k…`,
+   `✔ x402 payment settled`, `✔ paid response matches on-chain state`.
+5. The payout panel shows $1.00, the settlement signature (explorer link), and
+   their message writ large. The USDC is already in their wallet.
 
 ## Testing
 
 | Suite | Command | What it proves |
 | --- | --- | --- |
-| Server | `bun test` | Auth, idempotency, session lifecycle, claim/withdraw rules, aggregation |
-| Program | `bun run program:test` | 17 LiteSVM tests: the escrow lifecycle and every authorization boundary |
-| Chain integration | `bun test packages/chain` (with a validator) | The TypeScript layouts actually agree with the deployed Rust structs |
-
-The chain integration suite is the important one: discriminators, PDA seeds, and
-byte offsets are the three things that can silently drift between
-`packages/chain` and `program/`, and only a round trip against a real deployed
-program catches it.
+| Server | `bun test apps/server` | Auth, session lifecycle, the five-step pipeline against a fake chain, the pay-once invariant |
+| Chain | `bun test packages/chain` | 402 envelope parsing (v1+v2), cap enforcement, quest-account byte decoding, disabled-mode flow |
+| Program | `bun run program:test` | LiteSVM: instruction auth and the byte-offset contract the server depends on |
+| Starter | `bun test starter` | The kit actually emits a compliant 402 with the right mint/network/cap |

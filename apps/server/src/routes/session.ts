@@ -15,7 +15,7 @@ export function sessionRoutes(ctx: ServiceContext): Hono {
     const session = getSession(ctx.db, c.req.param('pairingCode'));
     if (!session) return fail(c, 404, 'session_not_found', 'no session for that pairing code');
 
-    const view = buildSessionView(ctx.db, session);
+    const view = buildSessionView(ctx, session);
     if (!view) return fail(c, 404, 'session_incomplete', 'session is missing its badge or station');
 
     return c.json(view);
@@ -57,7 +57,7 @@ export function sessionRoutes(ctx: ServiceContext): Hono {
 
         unsubscribe = ctx.live.subscribe(pairingCode, send);
 
-        const view = buildSessionView(ctx.db, session);
+        const view = buildSessionView(ctx, session);
         if (view) send({ type: 'state', view });
 
         heartbeat = setInterval(() => send({ type: 'ping' }), HEARTBEAT_MS);

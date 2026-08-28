@@ -148,10 +148,18 @@ Codex output is a proposal, not a merge. Opus 5 must:
 
 ```
 apps/server      Bun + Hono API. SQLite via bun:sqlite. SSE for live sessions.
-apps/pwa         SvelteKit 5 (runes) mobile PWA + operator/simulator dashboard.
-packages/shared  Types, zod API schemas, and the deterministic content catalog.
-packages/chain   TypeScript client for the badge_escrow program.
-program          Anchor 2.0.0-rc.1 workspace (Rust + LiteSVM tests).
+                 Runs the quest verification agent + x402 payer.
+apps/pwa         SvelteKit 5 (runes) terminal-themed quest console + simulator.
+packages/shared  Types, zod API schemas, and the pinned quest constants
+                 (PDA seed, byte offsets, cluster/network/USDC ids).
+packages/chain   The x402 + Solana module: 402 challenge parsing, the paying
+                 fetch, raw RPC reads of hacker programs. The server consumes
+                 only the frozen QuestChain interface (src/types.ts).
+program          htn_quest — Anchor 2.0.0-rc.1 workspace (Rust + LiteSVM tests).
+                 The reference program hackers deploy for the quest.
+starter          The hacker-facing kit: x402-paywalled Hono endpoint +
+                 set-message CLI. Must stay standalone-copyable (no workspace
+                 imports).
 scripts          Program build and local validator tooling.
 ```
 
@@ -205,13 +213,21 @@ and TypeScript types, then rebuilds the `.so` with
   non-null assertions outside of tests.
 - Svelte 5 runes (`$state`, `$derived`, `$effect`) only — no stores, no Svelte 4
   syntax.
-- The content catalog is **deterministic**: `animalForBadge(badgeId)` and
-  `itemForVisit(badgeId, stationId)` are pure. Never persist generated content
-  as the source of truth when it can be derived.
-- Discriminators are read from the generated IDL, never hardcoded. If you change
-  an instruction name, rebuild so `packages/chain/src/idl/` is refreshed.
-- Chain writes happen *after* the local DB grant, so a flaky RPC never costs a
-  hacker their loot. `assetAddress` / `signature` stay null until the write lands.
-- The server holds the registry authority and can mint, but **cannot** claim or
-  withdraw on a hacker's behalf. Those instructions require the hacker's wallet
-  to sign, so the server only ever *builds* them (`/api/vault/claim-tx`).
+- The quest contract is pinned in `packages/shared/src/quest.ts` (PDA seed,
+  `QUEST_MESSAGE_OFFSET = 40`, message cap, USDC mints, x402 network ids) and
+  in the frozen `QuestChain` interface (`packages/chain/src/types.ts`). Never
+  re-declare those values elsewhere; `starter/` is the one allowed copy (it
+  must stay standalone) and marks its copies with a source comment.
+- **Pay-once is a database fact**: `quest_submissions.paid` is written in the
+  same step that records the settlement signature, *before* proof evaluation.
+  The $1 cap (`MAX_REWARD_USD`) is enforced independently at challenge
+  validation and again inside `packages/chain` right before paying. Never relax
+  any of the three without changing all of them knowingly.
+- All money-moving and chain-reading code lives in `packages/chain`; no
+  `@x402/*` or `@solana/*` imports in `apps/server` or `apps/pwa`.
+- Verification steps run cheap-and-read-only first; money moves at step 4 of 5.
+  Keep that ordering.
+- Discriminators are read from the generated IDL (`starter/idl/`), never
+  hardcoded. If you change an instruction name, rebuild so it is refreshed.
+- The server must run end-to-end with the disabled chain client (no payer key):
+  simulated payments + the dev mock vendor keep `/sim` demoable offline.

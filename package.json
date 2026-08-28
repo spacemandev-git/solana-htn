@@ -14,7 +14,6 @@
     "dev:pwa": "bun run --filter '@htn/pwa' dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
-    "test:e2e": "bun test apps/server/test/e2e.test.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "program:build": "./scripts/build-program.sh",
     "program:test": "cd program && cargo test",

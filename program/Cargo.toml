@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "programs/*"
+    "programs/htn_quest"
 ]
 resolver = "2"
 

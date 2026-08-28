@@ -1,4 +1,4 @@
-import type { Item, LiveEvent, SessionView } from '@htn/shared';
+import type { LiveEvent, QuestStep, SessionView } from '@htn/shared';
 import { ApiFailure, describeError, getSession, streamUrl } from './api.ts';
 
 export type LiveStatus =
@@ -9,30 +9,23 @@ export type LiveStatus =
 	| 'unreachable'
 	| 'missing';
 
-/** How long a freshly unlocked item keeps its "new" treatment. */
-const NEW_ITEM_MS = 9000;
+export interface ProgressEntry {
+	step: QuestStep;
+	status: 'running' | 'ok' | 'fail';
+	detail?: string;
+	at: number;
+}
 
-/**
- * Loads a SessionView and keeps it current from the server's SSE stream.
- *
- * Owns every piece of live state the phone view renders: the view itself, the
- * connection status, the ids of items that just dropped (for the unlock
- * animation) and the most recent drop (for the banner).
- */
+/** Loads a SessionView and keeps quest verification current over SSE. */
 export class LiveSession {
 	readonly pairingCode: string;
 
 	view = $state<SessionView | null>(null);
 	status = $state<LiveStatus>('loading');
 	error = $state<string | null>(null);
-	/** Item ids that should render their unlock animation right now. */
-	freshIds = $state<number[]>([]);
-	/** Newest drop, shown in the banner until dismissed or timed out. */
-	latestDrop = $state<Item | null>(null);
-	lastEventAt = $state<number | null>(null);
+	progressLog = $state<ProgressEntry[]>([]);
 
 	#source: EventSource | null = null;
-	#timers = new Set<ReturnType<typeof setTimeout>>();
 	#stopped = false;
 	#failures = 0;
 
@@ -52,7 +45,6 @@ export class LiveSession {
 			const view = await getSession(this.pairingCode);
 			if (this.#stopped) return;
 			this.view = view;
-			this.#markFresh(view.newItemIds ?? []);
 			this.status = view.session.active ? 'live' : 'wilderness';
 			this.#open();
 		} catch (err) {
@@ -66,12 +58,10 @@ export class LiveSession {
 		this.#stopped = true;
 		this.#source?.close();
 		this.#source = null;
-		for (const t of this.#timers) clearTimeout(t);
-		this.#timers.clear();
 	}
 
-	dismissDrop(): void {
-		this.latestDrop = null;
+	clearLog(): void {
+		this.progressLog = [];
 	}
 
 	/** Manual retry from the error state. */
@@ -87,7 +77,6 @@ export class LiveSession {
 
 		const handle = (raw: MessageEvent<string>) => {
 			this.#failures = 0;
-			this.lastEventAt = Date.now();
 			let event: LiveEvent;
 			try {
 				event = JSON.parse(raw.data) as LiveEvent;
@@ -98,14 +87,14 @@ export class LiveSession {
 		};
 
 		source.onmessage = handle;
-		// The server may emit named SSE events instead of unnamed ones; the payload
-		// carries `type` either way, so both paths funnel into the same handler.
-		for (const name of ['state', 'item', 'disconnected', 'vault-claimed', 'ping'] as const) {
+		// Named events and unnamed events carry the same payload shape.
+		for (const name of ['state', 'quest-progress', 'quest-result', 'disconnected', 'ping'] as const) {
 			source.addEventListener(name, handle as EventListener);
 		}
 
 		source.onopen = () => {
 			this.#failures = 0;
+			this.error = null;
 			if (this.status === 'reconnecting' || this.status === 'unreachable') {
 				this.status = this.view?.session.active === false ? 'wilderness' : 'live';
 			}
@@ -126,15 +115,25 @@ export class LiveSession {
 
 	#apply(event: LiveEvent): void {
 		switch (event.type) {
-			case 'state': {
+			case 'state':
 				this.view = event.view;
-				this.#markFresh(event.view.newItemIds ?? []);
 				this.status = event.view.session.active ? 'live' : 'wilderness';
 				this.error = null;
 				break;
-			}
-			case 'item': {
-				this.#addItem(event.item);
+			case 'quest-progress':
+				this.progressLog = [
+					...this.progressLog,
+					{
+						step: event.step,
+						status: event.status,
+						...(event.detail === undefined ? {} : { detail: event.detail }),
+						at: Date.now()
+					}
+				];
+				break;
+			case 'quest-result': {
+				const view = this.view;
+				if (view) this.view = { ...view, quest: event.submission };
 				break;
 			}
 			case 'disconnected': {
@@ -148,53 +147,11 @@ export class LiveSession {
 				}
 				break;
 			}
-			case 'vault-claimed': {
-				const view = this.view;
-				if (view) {
-					this.view = {
-						...view,
-						vault: {
-							...view.vault,
-							ownerWallet: event.wallet,
-							claimedAt: view.vault.claimedAt ?? new Date().toISOString()
-						}
-					};
+			case 'ping':
+				if (this.status === 'reconnecting' || this.status === 'unreachable') {
+					this.status = this.view?.session.active === false ? 'wilderness' : 'live';
 				}
 				break;
-			}
-			case 'ping':
-				if (this.status === 'reconnecting' || this.status === 'unreachable') this.status = 'live';
-				break;
 		}
-	}
-
-	#addItem(item: Item): void {
-		const view = this.view;
-		if (!view) return;
-		const exists = view.items.some((i) => i.id === item.id);
-		this.view = { ...view, items: exists ? view.items.map((i) => (i.id === item.id ? item : i)) : [...view.items, item] };
-		this.latestDrop = item;
-		this.#markFresh([item.id]);
-		this.#after(NEW_ITEM_MS, () => {
-			if (this.latestDrop?.id === item.id) this.latestDrop = null;
-		});
-	}
-
-	#markFresh(ids: readonly number[]): void {
-		if (ids.length === 0) return;
-		const merged = new Set(this.freshIds);
-		for (const id of ids) merged.add(id);
-		this.freshIds = [...merged];
-		this.#after(NEW_ITEM_MS, () => {
-			this.freshIds = this.freshIds.filter((id) => !ids.includes(id));
-		});
-	}
-
-	#after(ms: number, fn: () => void): void {
-		const t = setTimeout(() => {
-			this.#timers.delete(t);
-			if (!this.#stopped) fn();
-		}, ms);
-		this.#timers.add(t);
 	}
 }

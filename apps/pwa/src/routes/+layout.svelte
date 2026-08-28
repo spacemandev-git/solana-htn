@@ -18,7 +18,6 @@
 			</a>
 			<nav>
 				<a class="navlink" class:on={path === '/sim'} href="/sim">Simulator</a>
-				<a class="navlink" class:on={path === '/wallet'} href="/wallet">Wallet</a>
 			</nav>
 		</div>
 	</header>
@@ -29,8 +28,8 @@
 {#if !bare}
 	<footer class="footer">
 		<div class="shell foot">
-			<span class="label">Hack the North × Solana — badge activation</span>
-			<span class="label">ESP32-C3 · ESP-NOW · Solana escrow</span>
+			<span class="label">Hack the North × Solana — quest activation</span>
+			<span class="label">ESP32-C3 · ESP-NOW · x402 · Solana</span>
 		</div>
 	</footer>
 {/if}

@@ -2,9 +2,7 @@
  * Environment parsing. Every value has a defensible local default so a fresh
  * clone boots with `bun run dev` and nothing else.
  */
-
-/** Placeholder used until the Anchor program is deployed and PROGRAM_ID is set. */
-const DEFAULT_PROGRAM_ID = 'BadgeEscrow11111111111111111111111111111111';
+import { CLUSTERS, usdToAtomic, type Cluster } from '@htn/shared';
 
 export interface ServerConfig {
   nodeEnv: string;
@@ -17,9 +15,11 @@ export interface ServerConfig {
   pwaOrigin: string;
   /** Base of the pairing URL handed back to Sync Stations. */
   publicAppUrl: string;
-  programId: string;
+  solanaCluster: Cluster;
   solanaRpcUrl: string | undefined;
-  solanaAuthoritySecretKey: string | undefined;
+  x402PayerSecretKey: string | undefined;
+  maxRewardAtomic: number;
+  usdcMint: string;
   /** Dev-only routes (reset, unauthenticated sync) are mounted off production. */
   devRoutesEnabled: boolean;
 }
@@ -39,10 +39,24 @@ function trimmed(value: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
+function parseCluster(value: string | undefined): Cluster {
+  const cluster = trimmed(value) ?? 'devnet';
+  if (cluster !== 'devnet' && cluster !== 'mainnet') {
+    throw new Error('SOLANA_CLUSTER must be devnet or mainnet');
+  }
+  return cluster;
+}
+
+function parseMaxRewardAtomic(value: string | undefined): number {
+  const dollars = Number.parseFloat(value ?? '1');
+  return Math.max(1, usdToAtomic(Number.isFinite(dollars) ? dollars : 1));
+}
+
 export function loadConfig(env: EnvLike = process.env): ServerConfig {
   const nodeEnv = trimmed(env.NODE_ENV) ?? 'development';
   const isProduction = nodeEnv === 'production';
   const stationApiKey = trimmed(env.STATION_API_KEY) ?? DEFAULT_STATION_API_KEY;
+  const solanaCluster = parseCluster(env.SOLANA_CLUSTER);
 
   if (isProduction && stationApiKey === DEFAULT_STATION_API_KEY) {
     console.warn('[config] STATION_API_KEY is unset in production; using the public dev default.');
@@ -56,9 +70,11 @@ export function loadConfig(env: EnvLike = process.env): ServerConfig {
     stationApiKey,
     pwaOrigin: trimmed(env.PWA_ORIGIN) ?? 'http://localhost:5173',
     publicAppUrl: trimmed(env.PUBLIC_APP_URL) ?? 'http://localhost:5173',
-    programId: trimmed(env.PROGRAM_ID) ?? DEFAULT_PROGRAM_ID,
+    solanaCluster,
     solanaRpcUrl: trimmed(env.SOLANA_RPC_URL),
-    solanaAuthoritySecretKey: trimmed(env.SOLANA_AUTHORITY_SECRET_KEY),
+    x402PayerSecretKey: trimmed(env.X402_PAYER_SECRET_KEY),
+    maxRewardAtomic: parseMaxRewardAtomic(env.MAX_REWARD_USD),
+    usdcMint: trimmed(env.USDC_MINT) ?? CLUSTERS[solanaCluster].usdcMint,
     devRoutesEnabled: !isProduction,
   };
 }

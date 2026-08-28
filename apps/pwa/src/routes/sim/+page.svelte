@@ -1,22 +1,20 @@
 <script lang="ts">
-	import { ANIMALS, type BadgeSummary, type SyncResponse } from '@htn/shared';
+	import type { BadgeSummary, QuestStatus, SyncResponse } from '@htn/shared';
 	import {
 		describeError,
 		devReset,
-		getBadgeDetail,
 		getBadges,
 		getHealth,
 		stationDisconnect,
 		stationSync,
-		type BadgeDetail,
 		type Health,
 		type StationRoute
 	} from '$lib/api.ts';
-	import { SimLog, SimState, type SimBadge, type SimStation } from '$lib/sim.svelte.ts';
-	import ItemCard from '$lib/components/ItemCard.svelte';
 	import QrCode from '$lib/components/QrCode.svelte';
-	import { phoneUrl, shortAddress, since } from '$lib/format.ts';
+	import { phoneUrl, since } from '$lib/format.ts';
+	import { SimLog, SimState, type SimBadge, type SimStation } from '$lib/sim.svelte.ts';
 
+	const MOCK_VENDOR = 'http://localhost:3000/api/dev/vendor';
 	const sim = new SimState();
 	const log = new SimLog();
 
@@ -25,17 +23,11 @@
 	let serverError = $state<string | null>(null);
 	let refreshing = $state(false);
 	let lastRefresh = $state<number | null>(null);
-
 	let busy = $state<'sync' | 'disconnect' | 'reset' | null>(null);
 	let rawResponse = $state<string | null>(null);
 	let rawOk = $state(true);
 	let lastSync = $state<SyncResponse | null>(null);
 	let qrCode = $state<string | null>(null);
-
-	let detail = $state<BadgeDetail | null>(null);
-	let detailId = $state<string | null>(null);
-	let detailError = $state<string | null>(null);
-
 	let newStation = $state<SimStation>({ stationId: '', name: '' });
 	let newBadge = $state<SimBadge>({ badgeId: '', name: '', email: '' });
 	let rosterOpen = $state(false);
@@ -55,12 +47,6 @@
 		return () => clearInterval(timer);
 	});
 
-	let animalEmoji = $derived.by(() => {
-		const map = new Map<string, { emoji: string; name: string }>();
-		for (const animal of ANIMALS) map.set(animal.id, { emoji: animal.emoji, name: animal.name });
-		return map;
-	});
-
 	let phoneTarget = $derived(qrCode ? phoneUrl(qrCode) : null);
 	/** Dev routes drop the API key requirement; station routes are the real path. */
 	let route = $derived<StationRoute>(sim.useDevRoutes ? 'dev' : 'station');
@@ -70,12 +56,11 @@
 		if (refreshing) return;
 		refreshing = true;
 		try {
-			const [rows, h] = await Promise.all([getBadges(), getHealth()]);
+			const [rows, status] = await Promise.all([getBadges(), getHealth()]);
 			summaries = rows;
-			health = h;
+			health = status;
 			serverError = null;
 			lastRefresh = Date.now();
-			if (detailId) await loadDetail(detailId, true);
 		} catch (err) {
 			serverError = describeError(err);
 			health = null;
@@ -108,11 +93,10 @@
 			lastSync = res;
 			qrCode = res.pairingCode;
 			show(true, res);
-			const granted = res.granted.map((g) => `${g.name} (${g.rarity})`).join(', ');
 			log.push(
 				true,
 				`SYNC ${badge.badgeId} @ ${station.stationId}`,
-				granted.length > 0 ? `+${res.granted.length}: ${granted}` : 'no new item (repeat visit)'
+				`pairing ${res.pairingCode} · quest ${res.questStatus ?? 'not submitted'}`
 			);
 			await refresh();
 		} catch (err) {
@@ -139,7 +123,7 @@
 			log.push(
 				true,
 				`DISCONNECT ${badge.badgeId} @ ${station.stationId}`,
-				res.ended ? `ended ${res.pairingCode ?? ''} — into the wilderness` : 'no active session there'
+				res.ended ? `ended ${res.pairingCode ?? ''}` : 'no active session there'
 			);
 			await refresh();
 		} catch (err) {
@@ -152,7 +136,7 @@
 	}
 
 	async function fireReset(): Promise<void> {
-		if (!confirm('Wipe all badges, sessions and vaults on the server?')) return;
+		if (!confirm('Wipe all badges, sessions, and quest submissions on the server?')) return;
 		busy = 'reset';
 		try {
 			const res = await devReset();
@@ -160,8 +144,6 @@
 			log.push(true, 'RESET', 'server state wiped');
 			lastSync = null;
 			qrCode = null;
-			detail = null;
-			detailId = null;
 			await refresh();
 		} catch (err) {
 			const message = describeError(err);
@@ -170,26 +152,6 @@
 		} finally {
 			busy = null;
 		}
-	}
-
-	async function loadDetail(badgeId: string, silent = false): Promise<void> {
-		if (!silent) {
-			detailId = badgeId;
-			detail = null;
-			detailError = null;
-		}
-		try {
-			detail = await getBadgeDetail(badgeId);
-			detailError = null;
-		} catch (err) {
-			if (!silent) detailError = describeError(err);
-		}
-	}
-
-	function closeDetail(): void {
-		detailId = null;
-		detail = null;
-		detailError = null;
 	}
 
 	function addStation(event: SubmitEvent): void {
@@ -211,26 +173,33 @@
 		newBadge = { badgeId: '', name: '', email: '' };
 	}
 
-	async function copyPhoneLink(): Promise<void> {
-		if (!phoneTarget) return;
+	function stationLabel(stationId: string): string {
+		return sim.stations.find((station) => station.stationId === stationId)?.name ?? stationId;
+	}
+
+	function questTone(status: QuestStatus | null): string {
+		return status ?? 'none';
+	}
+
+	async function copy(value: string, title: string): Promise<void> {
 		try {
-			await navigator.clipboard.writeText(phoneTarget);
-			log.push(true, 'COPY', phoneTarget);
+			await navigator.clipboard.writeText(value);
+			log.push(true, title, value);
 		} catch {
-			log.push(false, 'COPY', 'Clipboard blocked — select the link and copy manually.');
+			log.push(false, title, 'Clipboard blocked — select the text and copy manually.');
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Operator simulator · HTN × Solana</title>
+	<title>Quest simulator · HTN × Solana</title>
 </svelte:head>
 
 <main class="shell wide">
 	<section class="head">
 		<div>
 			<p class="label">Operator console</p>
-			<h1 class="h2">Sync Station simulator</h1>
+			<h1 class="h2">Quest simulator</h1>
 		</div>
 		<div class="headright">
 			<span class="pill" class:ok={health !== null} class:bad={serverError !== null}>
@@ -239,7 +208,7 @@
 			</span>
 			{#if health}
 				<span class="pill" class:ok={health.chainEnabled}>
-					chain {health.chainEnabled ? 'on' : 'off'}
+					{health.cluster} · chain {health.chainEnabled ? 'on' : 'off'}
 				</span>
 				<span class="pill">{health.badgeCount} {health.badgeCount === 1 ? 'badge' : 'badges'}</span>
 			{/if}
@@ -250,11 +219,20 @@
 	</section>
 
 	{#if serverError}
-		<p class="note note-error">{serverError}</p>
+		<p class="note note-error servernote">{serverError}</p>
 	{/if}
 
+	<section class="vendor card">
+		<div>
+			<p class="label">Offline demo endpoint</p>
+			<code>mock vendor for demos: {MOCK_VENDOR}</code>
+		</div>
+		<button class="btn btn-ghost btn-sm" onclick={() => copy(MOCK_VENDOR, 'COPY VENDOR')}>
+			Copy
+		</button>
+	</section>
+
 	<div class="cols">
-		<!-- ------------------------------ left ------------------------------ -->
 		<div class="col">
 			<section class="panel">
 				<p class="label">Station API key</p>
@@ -386,7 +364,7 @@
 			{#if qrCode && phoneTarget}
 				<section class="panel">
 					<div class="panelhead">
-						<p class="label">Phone view — {qrCode}</p>
+						<p class="label">Quest view — {qrCode}</p>
 						<button class="linkbtn label" onclick={() => (qrCode = null)}>Hide</button>
 					</div>
 					<div class="qrrow">
@@ -395,7 +373,9 @@
 							<span class="mono url">{phoneTarget}</span>
 							<div class="btnrow">
 								<a class="btn btn-sm" href="/s/{encodeURIComponent(qrCode)}">Open</a>
-								<button class="btn btn-ghost btn-sm" onclick={copyPhoneLink}>Copy link</button>
+								<button class="btn btn-ghost btn-sm" onclick={() => copy(phoneTarget, 'COPY LINK')}>
+									Copy link
+								</button>
 							</div>
 						</div>
 					</div>
@@ -415,9 +395,9 @@
 					<ul class="log">
 						{#each log.entries as entry (entry.id)}
 							<li class:bad={!entry.ok}>
-								<span class="label t">{entry.at}</span>
-								<span class="ltitle">{entry.title}</span>
-								<span class="label ldetail">{entry.detail}</span>
+								<span class="label time">{entry.at}</span>
+								<span class="logtitle">{entry.title}</span>
+								<span class="label logdetail">{entry.detail}</span>
 							</li>
 						{/each}
 					</ul>
@@ -425,7 +405,6 @@
 			</section>
 		</div>
 
-		<!-- ------------------------------ right ------------------------------ -->
 		<div class="col">
 			<section class="panel">
 				<div class="panelhead">
@@ -451,55 +430,46 @@
 							<thead>
 								<tr>
 									<th>Badge</th>
-									<th>Animal</th>
-									<th class="num">Items</th>
-									<th class="num">Stns</th>
-									<th>Session</th>
-									<th>Vault</th>
+									<th>Active station</th>
+									<th>Pairing code</th>
+									<th>Quest</th>
 									<th></th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each summaries as row (row.badge.badgeId)}
-									{@const animal = animalEmoji.get(row.badge.animal)}
-									<tr
-										class:selected={detailId === row.badge.badgeId}
-										onclick={() => void loadDetail(row.badge.badgeId)}
-									>
+									<tr>
 										<td>
-											<span class="bname">{row.badge.name}</span>
+											<span class="badge-name">{row.badge.name}</span>
 											<span class="label">{row.badge.badgeId}</span>
 										</td>
-										<td class="animal">
-											<span aria-hidden="true">{animal?.emoji ?? '·'}</span>
-											<span class="label">{animal?.name ?? row.badge.animal}</span>
-										</td>
-										<td class="num mono">{row.itemCount}</td>
-										<td class="num mono">{row.stationsVisited}</td>
 										<td>
 											{#if row.activeSession}
-												<span class="live">● {row.activeSession.pairingCode}</span>
+												<span>{stationLabel(row.activeSession.stationId)}</span>
 												<span class="label">{row.activeSession.stationId}</span>
 											{:else}
-												<span class="label off">wilderness</span>
+												<span class="label muted">—</span>
 											{/if}
 										</td>
 										<td>
-											{#if row.vault.ownerWallet}
-												<span class="claimed">{shortAddress(row.vault.ownerWallet)}</span>
-												<span class="label">{since(row.vault.claimedAt)}</span>
+											{#if row.activeSession}
+												<a class="pairing" href="/s/{row.activeSession.pairingCode}">
+													{row.activeSession.pairingCode}
+												</a>
 											{:else}
-												<span class="label off">escrow</span>
+												<span class="label muted">—</span>
 											{/if}
 										</td>
-										<td class="rowact">
+										<td>
+											<span class="questchip {questTone(row.quest?.status ?? null)}">
+												{row.quest?.status ?? '—'}
+											</span>
+										</td>
+										<td class="rowaction">
 											{#if row.activeSession}
 												<button
 													class="btn btn-ghost btn-sm"
-													onclick={(event) => {
-														event.stopPropagation();
-														qrCode = row.activeSession?.pairingCode ?? null;
-													}}
+													onclick={() => (qrCode = row.activeSession?.pairingCode ?? null)}
 												>
 													QR
 												</button>
@@ -516,65 +486,6 @@
 					</p>
 				{/if}
 			</section>
-
-			{#if detailId}
-				<section class="panel">
-					<div class="panelhead">
-						<p class="label">Inventory — {detailId}</p>
-						<button class="linkbtn label" onclick={closeDetail}>Close</button>
-					</div>
-					{#if detailError}
-						<p class="note note-error">{detailError}</p>
-					{:else if !detail}
-						<p class="label hint">Loading…</p>
-					{:else}
-						<div class="detailhead">
-							<div class="stack">
-								<span class="bname">
-									<span aria-hidden="true">{detail.animal.emoji}</span>
-									{detail.badge.name}
-								</span>
-								<span class="label email">{detail.badge.email} · {detail.animal.name}</span>
-								<span class="label">
-									{detail.items.length} items · {detail.visits.length} stations ·
-									{detail.sessions.length} sessions ·
-									{detail.vault?.ownerWallet
-										? `claimed by ${shortAddress(detail.vault.ownerWallet)}`
-										: 'in escrow'}
-								</span>
-							</div>
-							{#if detail.activeSession}
-								<a class="btn btn-ghost btn-sm" href="/s/{detail.activeSession.pairingCode}">
-									Phone view
-								</a>
-							{/if}
-						</div>
-						{#if detail.items.length === 0}
-							<p class="label hint">No items yet.</p>
-						{:else}
-							<div class="grid">
-								{#each detail.items as item (item.id)}
-									<ItemCard {item} />
-								{/each}
-							</div>
-						{/if}
-						{#if detail.visits.length > 0}
-							<ul class="visits">
-								{#each detail.visits as visit (visit.stationId)}
-									<li>
-										<span class="vname">{visit.stationName ?? visit.stationId}</span>
-										<span class="label">
-											{visit.visitCount}
-											{visit.visitCount === 1 ? 'sync' : 'syncs'} · last {since(visit.lastSeenAt)}
-											{visit.lastRssi === null ? '' : ` · ${visit.lastRssi} dBm`}
-										</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					{/if}
-				</section>
-			{/if}
 		</div>
 	</div>
 </main>
@@ -610,6 +521,29 @@
 	.pill.bad {
 		color: var(--red);
 		border-color: color-mix(in srgb, var(--red) 45%, transparent);
+	}
+
+	.servernote {
+		margin-top: 16px;
+	}
+
+	.vendor {
+		margin-top: 18px;
+		padding: 14px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+		background: var(--bg-sunken);
+	}
+
+	.vendor code {
+		display: block;
+		margin-top: 5px;
+		font-family: var(--mono);
+		font-size: 0.75rem;
+		color: var(--green);
+		word-break: break-all;
 	}
 
 	.cols {
@@ -798,36 +732,34 @@
 		display: grid;
 		grid-template-columns: auto 1fr;
 		gap: 2px 12px;
-		padding: 8px 0;
+		padding: 8px 0 8px 10px;
 		border-top: 1px solid var(--rule-soft);
 		border-left: 2px solid var(--green);
-		padding-left: 10px;
 	}
 
 	.log li.bad {
 		border-left-color: var(--red);
 	}
 
-	.ltitle {
+	.logtitle {
 		font-family: var(--mono);
 		font-size: 0.72rem;
 		color: var(--ink);
 	}
 
-	.ldetail {
+	.logdetail {
 		grid-column: 2;
 		color: var(--ink-faint);
 		text-transform: none;
 		letter-spacing: 0.02em;
 	}
 
-	.t {
+	.time {
 		color: var(--ink-faint);
 	}
 
 	.tablewrap {
 		overflow-x: auto;
-		margin: 0 -2px;
 	}
 
 	.table {
@@ -844,112 +776,77 @@
 		text-transform: uppercase;
 		color: var(--ink-faint);
 		font-weight: 500;
-		padding: 0 10px 8px 0;
+		padding: 0 14px 8px 0;
 		border-bottom: 1px solid var(--rule);
 		white-space: nowrap;
 	}
 
 	.table td {
-		padding: 9px 10px 9px 0;
+		padding: 11px 14px 11px 0;
 		border-bottom: 1px solid var(--rule-soft);
 		vertical-align: top;
 		white-space: nowrap;
-	}
-
-	.table tbody tr {
-		cursor: pointer;
-	}
-
-	.table tbody tr:hover td {
-		background: rgba(255, 255, 255, 0.02);
-	}
-
-	.table tbody tr.selected td {
-		background: var(--purple-wash);
 	}
 
 	.table td .label {
 		display: block;
 	}
 
-	.num {
-		text-align: right;
-		padding-right: 14px;
-	}
-
-	.bname {
+	.badge-name {
 		font-weight: 600;
 		letter-spacing: -0.02em;
 	}
 
-	.animal {
-		font-size: 1.1rem;
-	}
-
-	.live {
-		font-family: var(--mono);
-		font-size: 0.74rem;
-		color: var(--green);
-		letter-spacing: 0.1em;
-	}
-
-	.claimed {
-		font-family: var(--mono);
-		font-size: 0.74rem;
-		color: var(--purple);
-	}
-
-	.off {
+	.muted {
 		color: var(--ink-faint);
 	}
 
-	.rowact {
+	.pairing {
+		font-family: var(--mono);
+		font-size: 0.74rem;
+		letter-spacing: 0.1em;
+		color: var(--green);
+	}
+
+	.questchip {
+		display: inline-flex;
+		padding: 3px 7px;
+		border: 1px solid var(--rule-strong);
+		border-radius: 999px;
+		font-family: var(--mono);
+		font-size: 0.62rem;
+		color: var(--ink-faint);
+	}
+
+	.questchip.verifying {
+		color: var(--amber);
+		border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+	}
+
+	.questchip.completed {
+		color: var(--green);
+		border-color: color-mix(in srgb, var(--green) 45%, transparent);
+	}
+
+	.questchip.failed {
+		color: var(--red);
+		border-color: color-mix(in srgb, var(--red) 45%, transparent);
+	}
+
+	.rowaction {
 		text-align: right;
 		padding-right: 0;
 	}
 
-	.detailhead {
-		display: flex;
-		justify-content: space-between;
-		gap: 12px;
-		align-items: flex-start;
-		margin-bottom: 14px;
-		flex-wrap: wrap;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-		gap: 10px;
-	}
-
-	.visits {
-		list-style: none;
-		margin: 16px 0 0;
-		padding: 0;
-	}
-
-	.visits li {
-		display: flex;
-		justify-content: space-between;
-		gap: 12px;
-		flex-wrap: wrap;
-		padding: 8px 0;
-		border-top: 1px solid var(--rule-soft);
-	}
-
-	.email {
-		text-transform: none;
-		letter-spacing: 0.02em;
-	}
-
-	.vname {
-		font-size: 0.85rem;
-		letter-spacing: -0.02em;
-	}
-
 	.devtoggle {
 		margin-top: 10px;
+	}
+
+	@media (max-width: 500px) {
+		.vendor {
+			align-items: flex-start;
+			flex-direction: column;
+		}
 	}
 
 	@media (min-width: 900px) {

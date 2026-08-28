@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { ChainClient } from '@htn/chain';
+import type { QuestChain } from '@htn/chain';
 import type { ApiError } from '@htn/shared';
 import { stationAuth } from './auth.ts';
 import type { ServerConfig } from './config.ts';
@@ -12,12 +12,12 @@ import { adminRoutes } from './routes/admin.ts';
 import { devRoutes } from './routes/dev.ts';
 import { sessionRoutes } from './routes/session.ts';
 import { stationRoutes } from './routes/station.ts';
-import { vaultRoutes } from './routes/vault.ts';
+import { questRoutes } from './routes/quest.ts';
 import type { ServiceContext } from './services/context.ts';
 
 export interface AppDeps {
   db: Database;
-  chain: ChainClient;
+  chain: QuestChain;
   config: ServerConfig;
   /** Supply your own to observe pushes in tests. */
   live?: LiveHub;
@@ -51,7 +51,7 @@ export function buildAppWithContext(deps: AppDeps): App {
     cors({
       origin: ctx.config.pwaOrigin,
       credentials: true,
-      allowHeaders: ['content-type', 'x-station-key'],
+      allowHeaders: ['content-type', 'x-station-key', 'x-payment'],
       allowMethods: ['GET', 'POST', 'OPTIONS'],
     }),
   );
@@ -61,7 +61,7 @@ export function buildAppWithContext(deps: AppDeps): App {
   app.route('/api/station', stationRoutes(ctx));
 
   app.route('/api/session', sessionRoutes(ctx));
-  app.route('/api/vault', vaultRoutes(ctx));
+  app.route('/api/quest', questRoutes(ctx));
   app.route('/api', adminRoutes(ctx));
 
   if (ctx.config.devRoutesEnabled) {

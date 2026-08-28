@@ -7,21 +7,12 @@
 
 	let { status }: Props = $props();
 
-	const COPY: Record<LiveStatus, { text: string; tone: string }> = {
-		loading: { text: 'Connecting', tone: 'tone-idle' },
-		live: { text: 'Live', tone: 'tone-live' },
-		reconnecting: { text: 'Reconnecting', tone: 'tone-warn' },
-		wilderness: { text: 'Disconnected', tone: 'tone-off' },
-		unreachable: { text: 'Offline', tone: 'tone-warn' },
-		missing: { text: 'No session', tone: 'tone-off' }
-	};
-
-	let copy = $derived(COPY[status]);
+	let online = $derived(status === 'live');
 </script>
 
-<span class="pill status {copy.tone}" aria-live="polite">
-	<span class="dot" class:pulse={status === 'live'}></span>
-	{copy.text}
+<span class="pill status" class:tone-live={online} class:tone-off={!online} aria-live="polite">
+	<span class="dot" class:pulse={online}></span>
+	{online ? 'Live' : 'Offline'}
 </span>
 
 <style>
@@ -35,17 +26,8 @@
 		background: var(--green-wash);
 	}
 
-	.tone-warn {
-		color: var(--amber);
-		background: rgba(255, 182, 72, 0.08);
-	}
-
 	.tone-off {
 		color: var(--ink-faint);
-	}
-
-	.tone-idle {
-		color: var(--ink-mute);
 	}
 
 	.pulse {

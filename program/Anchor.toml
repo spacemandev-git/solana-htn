@@ -8,7 +8,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-badge_escrow = "6kdZgrhS4FANagxKHiMoJzm2wEp2NRgNYTkjpYYRjtdD"
+htn_quest = "9UkH8LeXw8jpQFZVNS3yk9LmkzsFAh54MK7SGP8jTsfY"
 
 [provider]
 cluster = "localnet"

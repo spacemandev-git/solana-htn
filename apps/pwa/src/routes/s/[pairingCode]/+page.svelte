@@ -1,12 +1,28 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { LiveSession } from '$lib/live.svelte.ts';
-	import ItemCard from '$lib/components/ItemCard.svelte';
+	import { tick } from 'svelte';
+	import {
+		QUEST_STEP_LABELS,
+		atomicToUsd,
+		explorerAddressUrl,
+		explorerTxUrl,
+		type QuestSubmitRequest
+	} from '@htn/shared';
+	import { describeError, submitQuest } from '$lib/api.ts';
 	import StatusPill from '$lib/components/StatusPill.svelte';
-	import { clockTime, shortAddress, since } from '$lib/format.ts';
+	import { LiveSession } from '$lib/live.svelte.ts';
+
+	const PROGRAM_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 	let code = $derived(page.params.pairingCode ?? '');
 	let live = $state<LiveSession | null>(null);
+	let endpointUrl = $state('');
+	let programId = $state('');
+	let formError = $state<string | null>(null);
+	let posting = $state(false);
+	let seededAt = $state<string | null>(null);
+	let briefOpen = $state(true);
+	let logPanel = $state<HTMLDivElement | null>(null);
 
 	$effect(() => {
 		const pairingCode = code;
@@ -22,34 +38,103 @@
 
 	let view = $derived(live?.view ?? null);
 	let status = $derived(live?.status ?? 'loading');
-	let wilderness = $derived(status === 'wilderness');
-	let items = $derived(view?.items ?? []);
-	let stationCount = $derived(new Set(items.map((i) => i.stationId)).size);
-	let worn = $derived.by(() => {
-		// One item per slot is worn: the most recently minted one in that slot.
-		const bySlot = new Map<string, number>();
-		for (const item of items) {
-			const current = bySlot.get(item.slot);
-			if (current === undefined || item.id > current) bySlot.set(item.slot, item.id);
-		}
-		return new Set(bySlot.values());
+	let quest = $derived(view?.quest ?? null);
+	let progressLog = $derived(live?.progressLog ?? []);
+	let completed = $derived(quest?.status === 'completed');
+	let verifying = $derived(quest?.status === 'verifying');
+	let submissionLocked = $derived(posting || verifying || quest?.paid === true);
+
+	$effect(() => {
+		const submission = quest;
+		if (!submission || submission.submittedAt === seededAt) return;
+		endpointUrl = submission.endpointUrl;
+		programId = submission.programId;
+		seededAt = submission.submittedAt;
 	});
-	let fresh = $derived(new Set(live?.freshIds ?? []));
-	let drop = $derived(live?.latestDrop ?? null);
+
+	$effect(() => {
+		progressLog.length;
+		verifying;
+		void tick().then(() => {
+			if (logPanel) logPanel.scrollTop = logPanel.scrollHeight;
+		});
+	});
+
+	function validationError(endpoint: string, program: string): string | null {
+		let parsed: URL;
+		try {
+			parsed = new URL(endpoint);
+		} catch {
+			return 'Endpoint must be a valid http(s) URL.';
+		}
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+			return 'Endpoint must be a valid http(s) URL.';
+		}
+		if (!PROGRAM_ID.test(program)) {
+			return 'Program ID must be a 32–44 character base58 address.';
+		}
+		return null;
+	}
+
+	async function submit(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		if (!live || submissionLocked) return;
+		const endpoint = endpointUrl.trim();
+		const program = programId.trim();
+		const invalid = validationError(endpoint, program);
+		if (invalid) {
+			formError = invalid;
+			return;
+		}
+
+		const body: QuestSubmitRequest = {
+			pairingCode: code,
+			endpointUrl: endpoint,
+			programId: program
+		};
+		formError = null;
+		posting = true;
+		live.clearLog();
+		try {
+			const { submission } = await submitQuest(body);
+			if (live.view) live.view = { ...live.view, quest: submission };
+		} catch (err) {
+			formError = describeError(err);
+		} finally {
+			posting = false;
+		}
+	}
+
+	function logLine(
+		entry: (typeof progressLog)[number]
+	): { icon: string; text: string; tone: string } {
+		const label = QUEST_STEP_LABELS[entry.step];
+		if (entry.status === 'running') return { icon: '▸', text: `${label} …`, tone: 'run' };
+		const detail = entry.detail ? ` — ${entry.detail}` : '';
+		return entry.status === 'ok'
+			? { icon: '✔', text: `${label}${detail}`, tone: 'pass' }
+			: { icon: '✘', text: `${label}${detail}`, tone: 'fail' };
+	}
 </script>
 
 <svelte:head>
-	<title>{view ? `${view.badge.name} — ${view.animal.name}` : 'Badge session'} · HTN × Solana</title>
+	<title>{view ? `${view.badge.name} — The Quest` : 'Badge session'} · HTN × Solana</title>
 </svelte:head>
 
-<div class="phone" class:cold={wilderness}>
+<div class="console">
 	<header class="bar">
 		<a class="mark" href="/">HTN <span class="x">×</span> SOLANA</a>
+		{#if view}
+			<div class="identity">
+				<span>{view.badge.name}</span>
+				<span class="label">{view.station.name}</span>
+			</div>
+		{/if}
 		<StatusPill {status} />
 	</header>
 
 	{#if !view}
-		<section class="pad center">
+		<section class="center">
 			{#if status === 'unreachable'}
 				<p class="label">Offline</p>
 				<h1 class="h2">Can't reach the server</h1>
@@ -58,10 +143,7 @@
 			{:else if status === 'missing'}
 				<p class="label">Pairing {code}</p>
 				<h1 class="h2">No session for this code</h1>
-				<p class="body">
-					Pairing codes expire when a badge leaves the hub. Walk back up to a Sync Station to get a
-					fresh one.
-				</p>
+				<p class="body">Return to a station and sync the badge to get a fresh pairing code.</p>
 				<a class="btn btn-ghost" href="/">Back</a>
 			{:else}
 				<div class="spinner" aria-hidden="true"></div>
@@ -69,171 +151,246 @@
 			{/if}
 		</section>
 	{:else}
-		<section class="hero">
-			<div class="halo" class:muted={wilderness}>
-				<span class="emoji" aria-hidden="true">{view.animal.emoji}</span>
-			</div>
-			<h1 class="animal">{view.animal.name}</h1>
-			<p class="blurb">{view.animal.blurb}</p>
-			<div class="who">
-				<span class="name">{view.badge.name}</span>
-				<span class="label badgeid">{view.badge.badgeId}</span>
-			</div>
-		</section>
-
-		{#if wilderness}
-			<section class="band wild">
-				<p class="label">Signal lost</p>
-				<h2 class="bandtitle">You've wandered into the wilderness</h2>
-				<p class="body">
-					No Sync Station in range{view.session.endedAt
-						? ` since ${clockTime(view.session.endedAt)}`
-						: ''}. Your gear is safe in escrow — reach the next hub to keep collecting.
-				</p>
-			</section>
-		{:else}
-			<section class="band">
-				<div class="bandhead">
-					<p class="label">Currently at</p>
-					<span class="label since">{since(view.session.startedAt)}</span>
-				</div>
-				<h2 class="bandtitle">{view.station.name}</h2>
-				<p class="body">{view.station.blurb}</p>
-			</section>
-		{/if}
-
-		<section class="stats">
-			<div class="stat">
-				<span class="statnum">{items.length}</span>
-				<span class="label">Items</span>
-			</div>
-			<div class="stat">
-				<span class="statnum">{stationCount}</span>
-				<span class="label">Stations</span>
-			</div>
-			<div class="stat">
-				<span class="statnum" class:claimed={view.vault.ownerWallet}>
-					{view.vault.ownerWallet ? 'YES' : 'NO'}
-				</span>
-				<span class="label">Claimed</span>
-			</div>
-		</section>
-
-		<section class="pad">
-			<div class="sechead">
-				<p class="label">Wardrobe</p>
-				<span class="label">{items.length} owned</span>
-			</div>
-			{#if items.length === 0}
-				<p class="body empty">
-					Nothing yet. Your first station visit drops your first piece of gear.
-				</p>
-			{:else}
-				<div class="grid">
-					{#each items as item (item.id)}
-						<ItemCard {item} fresh={fresh.has(item.id)} worn={worn.has(item.id)} />
-					{/each}
-				</div>
+		<main class="quest">
+			{#if status !== 'live'}
+				<section class="note signal" role="status">
+					<strong>Station signal lost.</strong> Verification continues server-side. Keep this page
+					open and it will reconnect automatically.
+				</section>
 			{/if}
-		</section>
 
-		<section class="pad vault">
-			<div class="sechead">
-				<p class="label">Escrow vault</p>
-			</div>
-			{#if view.vault.ownerWallet}
-				<p class="body">
-					Claimed by <span class="mono addr">{shortAddress(view.vault.ownerWallet, 6)}</span>
-					{view.vault.claimedAt ? `· ${since(view.vault.claimedAt)}` : ''}
-				</p>
-				<a class="btn btn-ghost btn-block" href="/wallet?pairing={encodeURIComponent(code)}">
-					Withdraw items
-				</a>
-			{:else}
-				<p class="body">
-					Everything you earn is held in an on-chain escrow vault for badge
-					<span class="mono">{view.badge.badgeId}</span>. Connect a Solana wallet to take ownership.
-				</p>
-				<a class="btn btn-block" href="/wallet?pairing={encodeURIComponent(code)}">
-					Claim with wallet
-				</a>
+			<section class="block brief">
+				<div class="sectionhead">
+					<div>
+						<p class="label label-bright">$ cat quest.txt</p>
+						<h1 class="h2">THE QUEST</h1>
+					</div>
+					{#if completed}
+						<button class="collapse label" onclick={() => (briefOpen = !briefOpen)}>
+							{briefOpen ? 'collapse' : 'expand'}
+						</button>
+					{/if}
+				</div>
+
+				{#if briefOpen || !completed}
+					<ol class="steps">
+						<li>
+							<span class="number">[1]</span>
+							<p>
+								Grab the starter kit:
+								<a href="https://github.com/spacemandev-git/solana-htn">git clone https://github.com/spacemandev-git/solana-htn</a>
+								(dir <code>starter/</code>), full walkthrough in <code>docs/QUEST.md</code>
+							</p>
+						</li>
+						<li>
+							<span class="number">[2]</span>
+							<p>
+								Deploy the <code>htn_quest</code> program to {view.env.cluster} and store your
+								message in its <code>["quest"]</code> PDA
+							</p>
+						</li>
+						<li>
+							<span class="number">[3]</span>
+							<p>
+								Run the starter x402 server: it sells <code>GET /quest</code> for ≤
+								{atomicToUsd(view.env.maxRewardAtomic)} USDC paid to YOUR address
+							</p>
+						</li>
+						<li>
+							<span class="number">[4]</span>
+							<p>
+								Expose it (LAN IP or tunnel) and submit below — our agent calls it once, pays,
+								and checks the chain
+							</p>
+						</li>
+					</ol>
+
+					<div class="facts">
+						<div><span>cluster</span><strong>{view.env.cluster}</strong></div>
+						<div><span>network</span><strong>{view.env.network}</strong></div>
+						<div><span>USDC mint</span><strong>{view.env.usdcMint}</strong></div>
+						<div>
+							<span>reward cap</span><strong>{atomicToUsd(view.env.maxRewardAtomic)} USDC</strong>
+						</div>
+						<div>
+							<span>agent address</span>
+							{#if view.env.payerAddress}
+								<a href={explorerAddressUrl(view.env.payerAddress, view.env.cluster)}>
+									{view.env.payerAddress}
+								</a>
+							{:else}
+								<strong>—</strong>
+							{/if}
+						</div>
+					</div>
+					{#if !view.env.chainEnabled}
+						<span class="pill simulated"><span class="dot"></span>payments simulated</span>
+					{/if}
+				{/if}
+			</section>
+
+			{#if quest?.status !== 'completed'}
+				<section class="block">
+					<p class="label label-bright">$ submit --verify</p>
+					<h2 class="sectiontitle">Submit your build</h2>
+					{#if quest?.paid}
+						<p class="note note-error">
+							The agent already paid this badge and cannot pay twice. The submitted proof can no
+							longer be retried.
+						</p>
+					{/if}
+					<form class="form" onsubmit={submit}>
+						<label class="prompt">
+							<span>$ endpoint_url</span>
+							<input
+								class="input"
+								type="url"
+								bind:value={endpointUrl}
+								placeholder="https://your-tunnel.example/quest"
+								autocomplete="url"
+								spellcheck="false"
+								disabled={submissionLocked}
+							/>
+						</label>
+						<label class="prompt">
+							<span>$ program_id</span>
+							<input
+								class="input"
+								bind:value={programId}
+								placeholder="Base58 program address"
+								autocapitalize="off"
+								autocomplete="off"
+								spellcheck="false"
+								disabled={submissionLocked}
+							/>
+						</label>
+						{#if formError}
+							<p class="note note-error" role="alert">{formError}</p>
+						{/if}
+						<button class="btn btn-green btn-block" type="submit" disabled={submissionLocked}>
+							{posting ? 'Submitting…' : verifying ? 'Verifying…' : 'Run verification'}
+						</button>
+					</form>
+				</section>
 			{/if}
-			<p class="label vaultaddr">
-				Vault {view.vault.vaultAddress ? shortAddress(view.vault.vaultAddress, 6) : 'pending'}
-			</p>
-		</section>
-	{/if}
 
-	{#if drop}
-		<div class="dropbanner" role="status">
-			<button class="dropinner" onclick={() => live?.dismissDrop()}>
-				<span class="label droplabel">New drop unlocked</span>
-				<span class="dropname">{drop.name}</span>
-				<span class="label dropmeta">{drop.slot} · {drop.rarity}</span>
-			</button>
-		</div>
+			{#if quest}
+				<section class="block">
+					<p class="label label-bright">$ tail -f verification.log</p>
+					<h2 class="sectiontitle">Verification log</h2>
+					<div class="log" bind:this={logPanel} aria-live="polite">
+						{#if progressLog.length === 0 && !verifying}
+							<p class="muted">No live output retained. The latest result is shown below.</p>
+						{/if}
+						{#each progressLog as entry, index (`${entry.at}-${index}`)}
+							{@const line = logLine(entry)}
+							<p class={line.tone}><span>{line.icon}</span> {line.text}</p>
+						{/each}
+						{#if verifying}
+							<p class="cursor"><span>▊</span></p>
+						{/if}
+					</div>
+				</section>
+			{/if}
+
+			{#if quest?.status === 'completed'}
+				<section class="block outcome success">
+					<p class="label paid">Quest complete · payout sent</p>
+					<p class="amount">
+						{quest.amountPaidAtomic === null ? '—' : atomicToUsd(quest.amountPaidAtomic)}
+						<span>USDC</span>
+					</p>
+					{#if quest.paymentSignature}
+						<a class="signature" href={explorerTxUrl(quest.paymentSignature, view.env.cluster)}>
+							view transaction ↗
+						</a>
+					{:else}
+						<span class="signature">simulated payment</span>
+					{/if}
+					<blockquote>“{quest.message ?? 'Proof verified.'}”</blockquote>
+				</section>
+			{:else if quest?.status === 'failed'}
+				<section class="block outcome failure">
+					<p class="label">Verification failed</p>
+					<h2>{quest.error ?? 'The proof did not pass verification.'}</h2>
+					{#if quest.step}
+						<p class="mono">failed at: {QUEST_STEP_LABELS[quest.step]}</p>
+					{/if}
+					{#if !quest.paid}
+						<p class="body">Fix the issue, then resubmit the form above.</p>
+					{/if}
+				</section>
+			{/if}
+		</main>
 	{/if}
 </div>
 
 <style>
-	.phone {
+	.console {
 		min-height: 100dvh;
-		display: flex;
-		flex-direction: column;
-		padding-bottom: calc(28px + var(--safe-b));
-		transition: filter 400ms ease;
-	}
-
-	.phone.cold {
-		filter: saturate(0.55);
+		background: var(--bg);
+		padding-bottom: calc(34px + var(--safe-b));
 	}
 
 	.bar {
 		position: sticky;
 		top: 0;
 		z-index: 20;
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
-		justify-content: space-between;
 		gap: 12px;
-		padding: 10px max(16px, var(--safe-r)) 10px max(16px, var(--safe-l));
-		padding-top: calc(10px + var(--safe-t));
-		background: color-mix(in srgb, var(--bg) 86%, transparent);
+		padding: calc(9px + var(--safe-t)) max(14px, var(--safe-r)) 9px
+			max(14px, var(--safe-l));
+		background: color-mix(in srgb, var(--bg) 90%, transparent);
 		backdrop-filter: blur(12px);
 		border-bottom: 1px solid var(--rule);
 	}
 
 	.mark {
 		font-family: var(--mono);
-		font-size: 0.6rem;
-		letter-spacing: 0.2em;
+		font-size: 0.58rem;
+		letter-spacing: 0.16em;
 		color: var(--ink-mute);
+		white-space: nowrap;
 	}
 
 	.x {
 		color: var(--purple);
 	}
 
-	.pad {
-		padding: 22px max(16px, var(--safe-l)) 22px max(16px, var(--safe-r));
+	.identity {
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		font-size: 0.75rem;
+		line-height: 1.25;
+		white-space: nowrap;
+		overflow: hidden;
+	}
+
+	.identity > span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.identity .label {
+		font-size: 0.54rem;
 	}
 
 	.center {
-		flex: 1;
+		min-height: calc(100dvh - 58px);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		text-align: center;
 		gap: 10px;
+		padding: 24px;
 	}
 
 	.center .body {
-		max-width: 30ch;
-	}
-
-	.center .btn {
-		margin-top: 10px;
+		max-width: 32ch;
 	}
 
 	.spinner {
@@ -243,7 +400,6 @@
 		border-top-color: var(--purple);
 		border-radius: 50%;
 		animation: spin 900ms linear infinite;
-		margin-bottom: 6px;
 	}
 
 	@keyframes spin {
@@ -252,233 +408,244 @@
 		}
 	}
 
-	.hero {
-		text-align: center;
-		padding: 30px 16px 26px;
-		border-bottom: 1px solid var(--rule);
-	}
-
-	.halo {
-		width: 132px;
-		height: 132px;
-		margin: 0 auto 16px;
-		border-radius: 50%;
-		display: grid;
-		place-items: center;
-		background:
-			radial-gradient(circle at 50% 42%, var(--purple-wash), transparent 68%),
-			var(--bg-sunken);
-		border: 1px solid var(--rule-strong);
-		box-shadow: 0 0 46px -14px var(--purple);
-		transition:
-			box-shadow 500ms ease,
-			border-color 500ms ease;
-	}
-
-	.halo.muted {
-		box-shadow: none;
-		border-color: var(--rule);
-	}
-
-	.emoji {
-		font-size: 68px;
-		line-height: 1;
-	}
-
-	.animal {
-		font-size: 2.6rem;
-		font-weight: 700;
-		letter-spacing: -0.045em;
-		line-height: 1;
-		margin: 0;
-	}
-
-	.blurb {
-		color: var(--ink-mute);
-		font-size: 0.92rem;
-		margin: 8px auto 0;
-		max-width: 30ch;
-	}
-
-	.who {
-		margin-top: 18px;
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-
-	.name {
-		font-weight: 600;
-		letter-spacing: -0.02em;
-	}
-
-	.badgeid {
-		color: var(--ink-faint);
-	}
-
-	.band {
-		padding: 20px max(16px, var(--safe-l));
-		border-bottom: 1px solid var(--rule);
-		background: linear-gradient(180deg, var(--purple-wash), transparent 78%);
-	}
-
-	.band.wild {
-		background: linear-gradient(180deg, rgba(255, 182, 72, 0.09), transparent 78%);
-	}
-
-	.bandhead {
-		display: flex;
-		justify-content: space-between;
-		gap: 10px;
-	}
-
-	.since {
-		color: var(--ink-faint);
-	}
-
-	.bandtitle {
-		font-size: 1.4rem;
-		font-weight: 660;
-		letter-spacing: -0.035em;
-		margin: 6px 0 6px;
-		line-height: 1.05;
-	}
-
-	.stats {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		border-bottom: 1px solid var(--rule);
-	}
-
-	.stat {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 3px;
-		padding: 16px 6px;
-		border-right: 1px solid var(--rule);
-	}
-
-	.stat:last-child {
-		border-right: 0;
-	}
-
-	.statnum {
-		font-family: var(--mono);
-		font-size: 1.35rem;
-		font-weight: 600;
-		letter-spacing: -0.02em;
-	}
-
-	.statnum.claimed {
-		color: var(--green);
-	}
-
-	.sechead {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 10px;
-		margin-bottom: 12px;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 10px;
-	}
-
-	.empty {
-		border: 1px dashed var(--rule-strong);
-		padding: 18px;
-		border-radius: 3px;
-		text-align: center;
-	}
-
-	.vault {
-		border-top: 1px solid var(--rule);
-	}
-
-	.vault .body {
-		margin-bottom: 14px;
-	}
-
-	.addr {
-		color: var(--green);
-	}
-
-	.vaultaddr {
-		margin-top: 10px;
-		text-align: center;
-	}
-
-	.dropbanner {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: calc(14px + var(--safe-b));
-		display: flex;
-		justify-content: center;
-		padding: 0 14px;
-		z-index: 50;
-		pointer-events: none;
-	}
-
-	.dropinner {
-		pointer-events: auto;
+	.quest {
 		width: 100%;
-		max-width: 420px;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 2px;
-		padding: 12px 14px;
-		border: 1px solid var(--green);
-		border-radius: 3px;
-		background: linear-gradient(180deg, rgba(20, 241, 149, 0.16), var(--bg-deep) 85%);
-		color: var(--ink);
-		text-align: left;
-		cursor: pointer;
-		font: inherit;
-		box-shadow: 0 12px 40px -18px var(--green);
-		animation: rise 460ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+		max-width: 760px;
+		margin: 0 auto;
 	}
 
-	.droplabel {
+	.signal {
+		margin: 16px;
+		font-family: var(--mono);
+		font-size: 0.75rem;
+	}
+
+	.block {
+		padding: 26px max(16px, var(--safe-l)) 26px max(16px, var(--safe-r));
+		border-bottom: 1px solid var(--rule);
+	}
+
+	.sectionhead {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 14px;
+	}
+
+	.sectionhead .h2 {
+		margin-top: 7px;
+	}
+
+	.collapse {
+		appearance: none;
+		border: 0;
+		background: transparent;
+		color: var(--purple);
+		cursor: pointer;
+		padding: 4px 0;
+	}
+
+	.steps {
+		list-style: none;
+		padding: 0;
+		margin: 24px 0;
+		display: grid;
+		gap: 18px;
+	}
+
+	.steps li {
+		display: grid;
+		grid-template-columns: 34px minmax(0, 1fr);
+		gap: 8px;
+		font-family: var(--mono);
+		font-size: 0.76rem;
+		line-height: 1.55;
+	}
+
+	.steps p {
+		margin: 0;
+		color: var(--ink-mute);
+		min-width: 0;
+	}
+
+	.steps a,
+	.steps code {
+		color: var(--green);
+		word-break: break-word;
+	}
+
+	.number {
+		color: var(--purple);
+	}
+
+	.facts {
+		border: 1px solid var(--rule);
+		background: var(--bg-sunken);
+		padding: 12px;
+		display: grid;
+		gap: 8px;
+		font-family: var(--mono);
+		font-size: 0.67rem;
+	}
+
+	.facts div {
+		display: grid;
+		grid-template-columns: 90px minmax(0, 1fr);
+		gap: 10px;
+	}
+
+	.facts span {
+		color: var(--ink-faint);
+	}
+
+	.facts strong,
+	.facts a {
+		font-weight: 500;
+		color: var(--ink-mute);
+		word-break: break-all;
+	}
+
+	.facts a:hover {
 		color: var(--green);
 	}
 
-	.dropname {
-		font-size: 1.1rem;
-		font-weight: 650;
+	.simulated {
+		margin-top: 10px;
+		color: var(--amber);
+		border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+	}
+
+	.sectiontitle {
+		margin: 7px 0 18px;
+		font-size: 1.2rem;
 		letter-spacing: -0.03em;
 	}
 
-	.dropmeta {
+	.form {
+		display: grid;
+		gap: 14px;
+	}
+
+	.prompt {
+		display: grid;
+		gap: 6px;
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		color: var(--green);
+	}
+
+	.prompt .input {
+		font-size: 0.75rem;
+	}
+
+	.log {
+		min-height: 116px;
+		max-height: 300px;
+		overflow-y: auto;
+		border: 1px solid var(--rule);
+		background: var(--bg-deep);
+		padding: 13px;
+		font-family: var(--mono);
+		font-size: 0.7rem;
+		line-height: 1.55;
+		scroll-behavior: smooth;
+	}
+
+	.log p {
+		margin: 0 0 5px;
+	}
+
+	.log p span {
+		display: inline-block;
+		width: 17px;
+	}
+
+	.log .run {
+		color: var(--ink-mute);
+	}
+
+	.log .pass {
+		color: var(--green);
+	}
+
+	.log .fail {
+		color: var(--red);
+	}
+
+	.log .muted {
 		color: var(--ink-faint);
 	}
 
-	@keyframes rise {
-		from {
+	.cursor {
+		color: var(--purple);
+		animation: blink 850ms steps(1, end) infinite;
+	}
+
+	@keyframes blink {
+		50% {
 			opacity: 0;
-			transform: translateY(22px);
-		}
-		to {
-			opacity: 1;
-			transform: none;
 		}
 	}
 
-	@media (min-width: 560px) {
-		.phone {
-			max-width: 480px;
-			margin: 0 auto;
+	.outcome {
+		background: linear-gradient(180deg, var(--green-wash), transparent);
+	}
+
+	.outcome .paid {
+		color: var(--green);
+	}
+
+	.amount {
+		font-family: var(--mono);
+		font-size: clamp(2.4rem, 14vw, 4.8rem);
+		font-weight: 700;
+		letter-spacing: -0.07em;
+		line-height: 1;
+		margin: 14px 0 8px;
+		color: var(--green);
+	}
+
+	.amount span {
+		font-size: 0.72rem;
+		letter-spacing: 0.1em;
+	}
+
+	.signature {
+		font-family: var(--mono);
+		font-size: 0.68rem;
+		color: var(--purple);
+	}
+
+	blockquote {
+		margin: 32px 0 8px;
+		font-size: clamp(1.8rem, 9vw, 3.8rem);
+		font-weight: 700;
+		letter-spacing: -0.045em;
+		line-height: 1.05;
+		word-break: break-word;
+	}
+
+	.failure {
+		background: linear-gradient(180deg, rgba(255, 92, 92, 0.08), transparent);
+		border-left: 2px solid var(--red);
+	}
+
+	.failure .label,
+	.failure .mono {
+		color: var(--red);
+	}
+
+	.failure h2 {
+		font-size: 1.15rem;
+		margin: 8px 0 12px;
+	}
+
+	@media (min-width: 600px) {
+		.console {
 			border-left: 1px solid var(--rule);
 			border-right: 1px solid var(--rule);
-		}
-
-		.grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
+			max-width: 800px;
+			margin: 0 auto;
 		}
 	}
 </style>

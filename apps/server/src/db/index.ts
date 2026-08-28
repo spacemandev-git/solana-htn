@@ -2,15 +2,14 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Database } from 'bun:sqlite';
 import type { SQLQueryBindings } from 'bun:sqlite';
-import type { AnimalId, Item, Rarity, Session, Slot, Station, Vault, Badge } from '@htn/shared';
+import type { Badge, QuestStep, QuestSubmission, QuestStatus, Session, Station } from '@htn/shared';
 import {
   SCHEMA_SQL,
   TABLES_IN_DELETE_ORDER,
   type BadgeRow,
-  type ItemRow,
+  type QuestSubmissionRow,
   type SessionRow,
   type StationRow,
-  type VaultRow,
 } from './schema.ts';
 
 export const MEMORY_DB = ':memory:';
@@ -40,8 +39,6 @@ export function wipeDatabase(db: Database): void {
     for (const table of TABLES_IN_DELETE_ORDER) {
       db.query(`DELETE FROM ${table}`).run();
     }
-    // Restart autoincrement so simulator runs get stable item ids.
-    db.query(`DELETE FROM sqlite_sequence WHERE name IN ('items','visits')`).run();
   })();
 }
 
@@ -76,7 +73,6 @@ export function toBadge(row: BadgeRow): Badge {
     badgeId: row.badge_id,
     name: row.name,
     email: row.email,
-    animal: row.animal as AnimalId,
     createdAt: row.created_at,
   };
 }
@@ -85,7 +81,6 @@ export function toStation(row: StationRow): Station {
   return {
     stationId: row.station_id,
     name: row.name,
-    blurb: row.blurb,
     lastSeenAt: row.last_seen_at,
   };
 }
@@ -101,29 +96,21 @@ export function toSession(row: SessionRow): Session {
   };
 }
 
-export function toItem(row: ItemRow): Item {
-  return {
-    id: row.id,
-    badgeId: row.badge_id,
-    stationId: row.station_id,
-    itemKey: row.item_key,
-    name: row.name,
-    slot: row.slot as Slot,
-    rarity: row.rarity as Rarity,
-    code: row.code,
-    mintedAt: row.minted_at,
-    assetAddress: row.asset_address,
-    signature: row.signature,
-    withdrawn: row.withdrawn === 1,
-  };
-}
-
-export function toVault(row: VaultRow): Vault {
+export function toQuestSubmission(row: QuestSubmissionRow): QuestSubmission {
   return {
     badgeId: row.badge_id,
-    vaultAddress: row.vault_address,
-    ownerWallet: row.owner_wallet,
-    claimedAt: row.claimed_at,
+    endpointUrl: row.endpoint_url,
+    programId: row.program_id,
+    status: row.status as QuestStatus,
+    step: row.step as QuestStep | null,
+    error: row.error,
+    message: row.message,
+    amountPaidAtomic: row.amount_paid_atomic,
+    paymentSignature: row.payment_signature,
+    network: row.network,
+    paid: row.paid === 1,
+    submittedAt: row.submitted_at,
+    completedAt: row.completed_at,
   };
 }
 

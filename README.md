@@ -1,22 +1,15 @@
-# Hack the North × Solana — badge activation
+# Hack the North × Solana — the $1 quest
 
-A Solana activation for the Hack the North hacker badges.
+One quest, real money. Attendees wear an ESP32-C3 badge; **beacons** around the
+venue pick badges up over ESP-NOW and hand back a QR code that live-pairs the
+hacker's phone. The phone shows a single quest:
 
-Attendees wear an ESP32-C3 badge. **Sync Stations** placed around the venue pick
-badges up over ESP-NOW and report them to a server, which hands back a pairing
-code and a URL. Open that URL on your phone and you get a live session for as
-long as you're standing near the station.
+> Deploy a tiny Anchor program that stores a message on Solana. Paywall an HTTP
+> endpoint with **x402**. Submit the URL — our agent calls it once, pays your
+> price in USDC (up to **$1**, straight to your wallet), and verifies the paid
+> response against the chain.
 
-The stations are **hubs** — towns, where you find quests, NPCs and points of
-interest. Between them is **wilderness**, where you have to go find other
-hackers. Your badge gives you an animal, and every new hub you reach dresses it
-in one more funky piece of clothing, minted into an on-chain escrow vault.
-Connect a wallet whenever you want and take ownership.
-
-## Status
-
-Infrastructure and the full end-to-end loop are built and tested. Quests, NPCs
-and the AI storyteller are not — this is the substrate they will sit on.
+The reward is the payment itself. No points, no items, no custody.
 
 ## Quick start
 
@@ -25,27 +18,32 @@ bun install
 bun run dev          # server on :3000, PWA on :5173
 ```
 
-Then open <http://localhost:5173/sim> and fire a fake badge sync. No hardware and
-no blockchain required — the server runs happily with the chain disabled.
+Open <http://localhost:5173/sim>, fire a fake badge sync, open the pairing
+link, and submit `http://localhost:3000/api/dev/vendor` as the endpoint with
+any base58 address as the program id. No hardware, no blockchain, no money —
+payments are simulated until you configure a payer key.
 
-### With a real chain
+### With real payments
 
 ```bash
-bun run localnet     # starts a validator, deploys badge_escrow, prints env
+# .env
+SOLANA_CLUSTER=devnet
+X402_PAYER_SECRET_KEY=<base58 64-byte key holding devnet USDC + a little SOL>
 ```
 
-Paste the three printed variables into `.env` and restart the server.
-`/api/health` will report `chainEnabled: true`.
+Restart the server; `/api/health` reports `chainEnabled: true` and the agent
+pays for real (devnet USDC from <https://faucet.circle.com>).
 
 ## Layout
 
 ```
-apps/server      Bun + Hono API. SQLite via bun:sqlite. SSE for live sessions.
-apps/pwa         SvelteKit 5 mobile PWA + operator/simulator dashboard.
-packages/shared  Types, zod API schemas, deterministic content catalog.
-packages/chain   TypeScript client for the badge_escrow program.
-program          Anchor 2.0.0-rc.1 workspace (Rust + LiteSVM tests).
-scripts          Program build and local validator tooling.
+apps/server      Bun + Hono API. SQLite. SSE. The verification agent + x402 payer.
+apps/pwa         SvelteKit 5 terminal-themed quest console + simulator dashboard.
+packages/shared  Types, zod API schemas, pinned quest constants.
+packages/chain   x402 challenge parsing, the paying fetch, Solana RPC reads.
+program          htn_quest — the Anchor 2.0 reference program hackers deploy.
+starter          The kit hackers copy: x402-paywalled endpoint + set-message CLI.
+scripts          Program build (SBPFv3) and local validator tooling.
 ```
 
 ## The PWA
@@ -53,51 +51,43 @@ scripts          Program build and local validator tooling.
 | Route | What it is |
 | --- | --- |
 | `/` | Landing page |
-| `/s/:pairingCode` | **The phone view.** Your animal, your clothing, which hub you're in, live over SSE |
-| `/wallet` | Connect a Solana wallet, claim your vault, withdraw items from escrow |
-| `/sim` | **The simulator.** Fake badges and stations, fire syncs and disconnects, watch every badge's inventory |
+| `/s/:pairingCode` | **The quest console.** Brief, submission form, live verification log, payout |
+| `/sim` | **The simulator.** Fake badges and beacons; demo the whole loop offline |
 
-`/sim` is how you demo or test the whole thing without hardware.
+## The quest, hacker-side
 
-## The chain
-
-`program/` is an Anchor **2.0.0-rc.1** program, `badge_escrow`. It holds each
-badge's animal and clothing in escrow — created and funded by the server, owned
-by nobody — until the hacker connects a wallet and claims the vault. After that
-the server permanently loses the ability to move those assets.
-
-That asymmetry is the point: the server can mint, and cannot take.
-
-See [docs/PROGRAM.md](docs/PROGRAM.md) for account layouts and instructions.
+Everything a hacker needs is in [`starter/`](starter/) and
+[docs/QUEST.md](docs/QUEST.md): deploy `program/` (htn_quest) to devnet, write
+a message into its `["quest"]` PDA, run the starter's x402 server with their
+own wallet as `payTo`, expose it, submit. The agent's five checks — program
+deployed, PDA readable, valid 402 terms ≤ $1 USDC, payment settles, response
+matches chain state — stream to their phone as a terminal log.
 
 ## Commands
 
 ```bash
 bun run dev             # server + PWA
-bun run dev:server      # server only
-bun run dev:pwa         # PWA only
 bun test                # all TypeScript tests
-bun run program:build   # build the program + IDL (see note below)
+bun run program:build   # build htn_quest + IDL (SBPFv3 — see note)
 bun run program:test    # LiteSVM tests
-bun run localnet        # validator + deploy
-bun run localnet:stop
+bun run localnet        # validator + deploy, for local program hacking
 ```
 
-> `anchor build` on its own does **not** produce a deployable artifact — it emits
-> an SBPFv0 binary, and SIMD-0500 disables deployment of SBPFv0/v1/v2. Always use
-> `bun run program:build`, which rebuilds with `--arch v3` and verifies the ELF
-> flags. See [CLAUDE.md](CLAUDE.md#building-the-program).
+> `anchor build` on its own does **not** produce a deployable artifact — it
+> emits an SBPFv0 binary, and SIMD-0500 disables deployment of SBPFv0/v1/v2.
+> Always use `bun run program:build`. See [CLAUDE.md](CLAUDE.md#building-the-program).
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Every value has a working local default; the only
-one you must change before pointing real hardware at it is `STATION_API_KEY`,
-the shared secret the Sync Stations authenticate with.
+Copy `.env.example` to `.env`. Every value has a working local default. The
+ones that matter at the event: `STATION_API_KEY` (beacon shared secret),
+`SOLANA_CLUSTER`, `X402_PAYER_SECRET_KEY` (the paying wallet), and
+`MAX_REWARD_USD` (the per-badge cap, default $1).
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit and why
 - [docs/API.md](docs/API.md) — every HTTP endpoint, the SSE stream, the schema
-- [docs/PROGRAM.md](docs/PROGRAM.md) — on-chain accounts, instructions, errors
-- [docs/SIMULATOR.md](docs/SIMULATOR.md) — driving the system without hardware
-- [CLAUDE.md](CLAUDE.md) — project rules and Anchor v2 gotchas
+- [docs/PROGRAM.md](docs/PROGRAM.md) — htn_quest account layout and instructions
+- [docs/QUEST.md](docs/QUEST.md) — the hacker-facing walkthrough
+- [docs/SIMULATOR.md](docs/SIMULATOR.md) — demoing without hardware
