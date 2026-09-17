@@ -85,6 +85,37 @@ describe('quest submission credential and state rules', () => {
     expect(completed.endpointUrl).toBe('https://vendor.example/retry');
     expect(h.chain.calls.checkProgram).toHaveLength(2);
   });
+
+  test('rejects a program id already being verified for another badge', async () => {
+    const badgeA = await pair('badge-claim-a');
+    const badgeB = await pair('badge-claim-b');
+    h.chain.programHandler = () => new Promise(() => {});
+
+    expect((await h.post('/api/quest/submit', questBody(badgeA.pairingCode))).status).toBe(202);
+    const response = await h.post('/api/quest/submit', questBody(badgeB.pairingCode));
+
+    expect(response.status).toBe(409);
+    expect(await errorCode(response)).toBe('program_already_claimed');
+    expect(h.chain.calls.checkProgram).toEqual(['11111111111111111111111111111111']);
+  });
+
+  test('does not let a failed unpaid attempt claim a program id', async () => {
+    const badgeA = await pair('badge-failed-claim-a');
+    const badgeB = await pair('badge-failed-claim-b');
+    h.chain.programResult = {
+      skipped: false,
+      deployed: false,
+      executable: false,
+      error: 'not deployed',
+    };
+    expect((await h.post('/api/quest/submit', questBody(badgeA.pairingCode))).status).toBe(202);
+    expect((await waitForQuest(h, badgeA.badgeId)).status).toBe('failed');
+
+    h.chain.programResult = { skipped: false, deployed: true, executable: true };
+    const response = await h.post('/api/quest/submit', questBody(badgeB.pairingCode));
+    expect(response.status).toBe(202);
+    expect((await waitForQuest(h, badgeB.badgeId)).status).toBe('completed');
+  });
 });
 
 describe('verification pipeline', () => {
@@ -158,7 +189,7 @@ describe('verification pipeline', () => {
         badgeId: 'badge-success',
         step: 'challenge',
         status: 'ok',
-        detail: '$1.00 to 11111111111111111111111111111111',
+        detail: '1.00 HTN to 11111111111111111111111111111111',
       },
       {
         type: 'quest-progress',

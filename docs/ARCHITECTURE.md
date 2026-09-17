@@ -13,8 +13,11 @@ the badge completes the quest, then awards both Solana items:
 
 > Deploy a tiny Anchor program that stores a message on Solana. Wrap it in an
 > HTTP endpoint paywalled with **x402**. Submit the URL. Our agent calls your
-> endpoint exactly once, pays your price in USDC (up to $1, straight to your
-> wallet), and verifies the paid response against the chain.
+> endpoint exactly once, pays your price in the cluster's payment token
+> (straight to your wallet), and verifies the paid response against the chain.
+
+Devnet uses HTN Bucks (`HTN`), a project-minted SPL token held by the agent;
+mainnet uses USDC.
 
 The reward *is* the payment. There is no scoreboard to update and no asset to
 custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
@@ -41,7 +44,7 @@ custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
 | --- | --- |
 | `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). Awards blind-box items, fans out badge SSE, runs the verification agent, and holds the x402 payer key. |
 | `apps/pwa` | SvelteKit 5 terminal-themed PWA: the quest console, plus the operator/simulator dashboard. |
-| `packages/shared` | The contract: domain types, zod API schemas, item pools, and pinned quest constants (PDA seed, byte offsets, cluster/network/USDC ids). |
+| `packages/shared` | The contract: domain types, zod API schemas, item pools, and pinned quest constants (PDA seed, byte offsets, cluster/network/payment-token ids). |
 | `packages/chain` | The x402 + Solana module: 402 challenge parsing/validation, the paying `fetch`, and raw RPC reads of hacker programs. |
 | `program` | `htn_quest`, the Anchor 2.0 reference program hackers deploy. See [PROGRAM.md](PROGRAM.md). |
 | `starter` | The kit hackers copy: an x402-paywalled Hono server + a `set-message` script. See [QUEST.md](QUEST.md). |
@@ -56,8 +59,8 @@ renders a live terminal log:
 2. **state** — `PDA(["quest"], programId)` exists, is owned by that program,
    and holds a borsh string at byte offset 40 (8 discriminator + 32 authority).
 3. **challenge** — a plain GET returns HTTP 402 whose terms are acceptable:
-   `exact` scheme, this cluster's network id (v1 or CAIP-2), the canonical
-   USDC mint, amount ≤ the cap, a `payTo`.
+   `exact` scheme, this cluster's network id (v1 or CAIP-2), the configured
+   payment mint, amount ≤ the cap, a `payTo`.
 4. **payment** — the wrapped fetch pays over x402 and retries. The settlement
    signature from `X-PAYMENT-RESPONSE` is recorded.
 5. **proof** — the paid response's JSON `message` equals the on-chain message.
@@ -126,16 +129,16 @@ that exact offset against LiteSVM, so the contract cannot drift silently.
 1. A hacker taps any regular blind box. The relay POSTs `/api/box`; the badge
    receives an item, its authoritative inventory, and `/s/4CW5G5`.
 2. The phone opens the quest console: the brief, inventory, and environment
-   facts (cluster, USDC mint, reward cap, Solana box id, agent address).
+   facts (cluster, payment mint and symbol, reward cap, Solana box id, agent address).
 3. The hacker clones the repo, deploys `htn_quest` to devnet, runs
    `bun run set-message "gm htn"`, starts `starter/` with their wallet as
    `payTo`, and tunnels it.
 4. They submit the URL + program id. The console streams:
    `✔ program deployed on-chain`, `✔ quest PDA holds a message`,
-   `✔ endpoint answers 402 with valid terms — $1.00 to 7f9k…`,
+   `✔ endpoint answers 402 with valid terms — 1.00 HTN to 7f9k…`,
    `✔ x402 payment settled`, `✔ paid response matches on-chain state`.
-5. The payout panel shows $1.00, the settlement signature (explorer link), and
-   their message. Their next tap at `solana-booth` awards item `9` (item `8` came on their first tap there).
+5. The payout panel shows 1.00 HTN, the settlement signature (explorer link), and
+   their message. Their next tap at `solana-booth-final` awards item `9` (item `8` came from `solana-booth`).
 
 ## Testing
 

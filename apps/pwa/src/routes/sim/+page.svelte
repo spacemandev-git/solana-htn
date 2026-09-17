@@ -156,8 +156,10 @@
 						{#each BOXES as box (box.id)}
 							<option value={box.id}>
 								{box.name} ({box.id}) → item {box.item}{health?.solanaBoxId === box.id
-									? ' — Solana box'
-									: ''}
+									? ' — Solana box (item 8)'
+									: health?.solanaFinalBoxId === box.id
+										? ' — Solana final box (item 9, quest-gated)'
+										: ''}
 							</option>
 						{/each}
 					</select>

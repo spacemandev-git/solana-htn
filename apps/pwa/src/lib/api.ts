@@ -112,6 +112,7 @@ export interface Health {
 	maxRewardAtomic: number;
 	badgeCount: number;
 	solanaBoxId: string;
+	solanaFinalBoxId: string;
 }
 
 export function getHealth(): Promise<Health> {

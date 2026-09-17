@@ -14,10 +14,12 @@ export function buildBadgeView(ctx: ServiceContext, badge: Badge): BadgeView {
       chainEnabled: ctx.chain.enabled,
       cluster,
       network: CLUSTERS[cluster].caip2,
-      usdcMint: ctx.config.usdcMint,
+      paymentMint: ctx.config.paymentMint,
+      paymentSymbol: ctx.config.paymentSymbol,
       maxRewardAtomic: ctx.config.maxRewardAtomic,
       payerAddress: ctx.chain.payerAddress,
       solanaBoxId: ctx.config.solanaBoxId,
+      solanaFinalBoxId: ctx.config.solanaFinalBoxId,
     },
   };
 }

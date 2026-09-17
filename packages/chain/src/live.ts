@@ -1,9 +1,23 @@
 import {
   address,
+  appendTransactionMessageInstruction,
   createKeyPairSignerFromBytes,
   createSolanaRpc,
+  createTransactionMessage,
   getProgramDerivedAddress,
+  getSignatureFromTransaction,
+  sendTransactionWithoutConfirmingFactory,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
+  type KeyPairSigner,
 } from '@solana/kit';
+import {
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstruction,
+  TOKEN_PROGRAM_ADDRESS,
+} from '@solana-program/token';
+import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022';
 import { QUEST_MESSAGE_MAX, QUEST_MESSAGE_OFFSET, QUEST_SEED, networksForCluster } from '@htn/shared';
 import {
   decodePaymentResponseHeader,
@@ -54,7 +68,7 @@ function selectorFor(config: LiveConfig): SelectPaymentRequirements {
       const amountAtomic = atomicBigInt(amount);
       if (
         requirement.scheme !== 'exact' ||
-        requirement.asset !== config.usdcMint ||
+        requirement.asset !== config.paymentMint ||
         !allowedNetworks.includes(requirement.network) ||
         requirement.payTo.trim().length === 0 ||
         amountAtomic === null
@@ -97,16 +111,19 @@ export class LiveQuestChain implements QuestChain {
   readonly payerAddress: string;
 
   private readonly rpc: ReturnType<typeof createSolanaRpc>;
+  private readonly payer: KeyPairSigner;
   private readonly fetchWithPayment: ReturnType<typeof wrapFetchWithPayment>;
 
   private constructor(
     private readonly config: LiveConfig,
     payerAddress: string,
+    payer: KeyPairSigner,
     client: x402Client,
   ) {
     this.cluster = config.cluster;
     this.payerAddress = payerAddress;
     this.rpc = createSolanaRpc(config.rpcUrl);
+    this.payer = payer;
     this.fetchWithPayment = wrapFetchWithPayment(fetch, client);
   }
 
@@ -134,7 +151,79 @@ export class LiveQuestChain implements QuestChain {
       paymentRequirementsSelector,
       networks,
     });
-    return new LiveQuestChain(config, String(signer.address), client);
+    return new LiveQuestChain(config, String(signer.address), keyPairSigner, client);
+  }
+
+  private async ensureRecipientTokenAccount(payTo: string): Promise<void> {
+    const mint = address(this.config.paymentMint);
+    const mintResponse = await this.rpc.getAccountInfo(mint, { encoding: 'base64' }).send();
+    const mintAccount = mintResponse.value;
+    if (mintAccount === null) {
+      throw new Error(`payment mint ${mint} does not exist on ${this.config.cluster}`);
+    }
+
+    const mintOwner = String(mintAccount.owner);
+    const tokenProgram =
+      mintOwner === String(TOKEN_PROGRAM_ADDRESS)
+        ? TOKEN_PROGRAM_ADDRESS
+        : mintOwner === String(TOKEN_2022_PROGRAM_ADDRESS)
+          ? TOKEN_2022_PROGRAM_ADDRESS
+          : null;
+    if (tokenProgram === null) {
+      throw new Error(`payment mint ${mint} is not an SPL token`);
+    }
+
+    const owner = address(payTo);
+    const [ata] = await findAssociatedTokenPda({ mint, owner, tokenProgram });
+    const ataResponse = await this.rpc
+      .getAccountInfo(ata, {
+        encoding: 'base64',
+        dataSlice: { offset: 0, length: 0 },
+      })
+      .send();
+    if (ataResponse.value !== null) return;
+
+    const latestBlockhash = (await this.rpc.getLatestBlockhash().send()).value;
+    const instruction = getCreateAssociatedTokenIdempotentInstruction({
+      payer: this.payer,
+      ata,
+      owner,
+      mint,
+      tokenProgram,
+    });
+    const transactionMessage = appendTransactionMessageInstruction(
+      instruction,
+      setTransactionMessageLifetimeUsingBlockhash(
+        latestBlockhash,
+        setTransactionMessageFeePayerSigner(
+          this.payer,
+          createTransactionMessage({ version: 0 }),
+        ),
+      ),
+    );
+    const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
+    const signature = getSignatureFromTransaction(signedTransaction);
+    const sendTransaction = sendTransactionWithoutConfirmingFactory({ rpc: this.rpc });
+    await sendTransaction(signedTransaction, { commitment: 'confirmed' });
+
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const response = await this.rpc.getSignatureStatuses([signature]).send();
+      const status = response.value[0];
+      if (status?.err != null) {
+        throw new Error(`recipient token account transaction failed: ${JSON.stringify(status.err)}`);
+      }
+      if (
+        status?.confirmationStatus === 'confirmed' ||
+        status?.confirmationStatus === 'finalized'
+      ) {
+        return;
+      }
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await new Promise(resolve => setTimeout(resolve, Math.min(1_000, remainingMs)));
+    }
+    throw new Error(`recipient token account transaction ${signature} timed out`);
   }
 
   async checkProgram(programId: string): Promise<ProgramCheckResult> {
@@ -210,6 +299,21 @@ export class LiveQuestChain implements QuestChain {
         amountAtomic: null,
         body: null,
         error: challenge.error ?? 'challenge validation failed',
+      };
+    }
+
+    try {
+      await this.ensureRecipientTokenAccount(challenge.requirement.payTo);
+    } catch (error) {
+      return {
+        ok: false,
+        simulated: false,
+        httpStatus: 0,
+        signature: null,
+        network: null,
+        amountAtomic: challenge.requirement.amountAtomic,
+        body: null,
+        error: `could not prepare recipient token account: ${getErrorMessage(error)}`,
       };
     }
 

@@ -6,7 +6,7 @@ import type {
   QuestChainConfig,
 } from './types.ts';
 
-type ChallengeConfig = Pick<QuestChainConfig, 'cluster' | 'maxPaymentAtomic' | 'usdcMint'>;
+type ChallengeConfig = Pick<QuestChainConfig, 'cluster' | 'maxPaymentAtomic' | 'paymentMint'>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -61,12 +61,12 @@ export function validateChallengeEnvelope(
     };
   }
 
-  const forAsset = onNetwork.filter(entry => field(entry, 'asset') === config.usdcMint);
+  const forAsset = onNetwork.filter(entry => field(entry, 'asset') === config.paymentMint);
   if (forAsset.length === 0) {
     return {
       ok: false,
       requirement: null,
-      error: `no accepts entry for asset ${config.usdcMint}`,
+      error: `no accepts entry for asset ${config.paymentMint}`,
     };
   }
 
@@ -93,7 +93,7 @@ export function validateChallengeEnvelope(
     const requirement: ChallengeRequirement = {
       scheme: 'exact',
       network: field(entry, 'network') ?? '',
-      asset: config.usdcMint,
+      asset: config.paymentMint,
       payTo,
       amountAtomic: amount,
     };

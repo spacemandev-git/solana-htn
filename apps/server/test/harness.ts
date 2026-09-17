@@ -43,7 +43,7 @@ export class FakeQuestChain implements QuestChain {
     requirement: {
       scheme: 'exact',
       network: CLUSTERS.devnet.caip2,
-      asset: CLUSTERS.devnet.usdcMint,
+      asset: CLUSTERS.devnet.paymentMint,
       payTo: TEST_PROGRAM_ID,
       amountAtomic: 1_000_000,
     },

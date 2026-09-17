@@ -15,9 +15,9 @@ export interface QuestChainConfig {
   rpcUrl?: string | undefined;
   /** base58-encoded 64-byte secret key of the paying agent. Absent → disabled. */
   payerSecretKey?: string | undefined;
-  /** The only asset the agent will pay in. */
-  usdcMint: string;
-  /** Hard ceiling per payment AND per badge, in USDC base units. */
+  /** The only SPL mint the agent will pay in (USDC on mainnet, HTN Bucks on devnet). */
+  paymentMint: string;
+  /** Hard ceiling per payment AND per badge, in paymentMint base units. */
   maxPaymentAtomic: number;
 }
 
@@ -52,7 +52,7 @@ export interface ChallengeRequirement {
 
 export interface ChallengeResult {
   ok: boolean;
-  /** The requirement that passed validation (right cluster, USDC, under cap). */
+  /** The requirement that passed validation (right cluster, configured payment mint, under cap). */
   requirement: ChallengeRequirement | null;
   error?: string;
 }
@@ -83,7 +83,7 @@ export interface QuestChain {
   readQuestMessage(programId: string): Promise<QuestStateResult>;
   /**
    * GET the endpoint expecting a 402, and validate the challenge: exact
-   * scheme, this cluster's network id (v1 or CAIP-2), the configured USDC
+   * scheme, this cluster's network id (v1 or CAIP-2), the configured payment
    * mint, and an amount within the cap. Never pays. Works even when disabled.
    */
   probeChallenge(endpointUrl: string): Promise<ChallengeResult>;

@@ -9,7 +9,10 @@ export type Cluster = "devnet" | "mainnet";
 
 export interface ClusterInfo {
   caip2: `${string}:${string}`;
-  usdcMint: string;
+  /** The SPL mint the event agent pays in. */
+  paymentMint: string;
+  /** Ticker for paymentMint. */
+  paymentSymbol: string;
   defaultRpcUrl: string;
   explorerSuffix: string;
 }
@@ -17,13 +20,15 @@ export interface ClusterInfo {
 export const CLUSTERS: Record<Cluster, ClusterInfo> = {
   devnet: {
     caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-    usdcMint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    paymentMint: "HTNBUCKS_MINT_PLACEHOLDER",
+    paymentSymbol: "HTN",
     defaultRpcUrl: "https://api.devnet.solana.com",
     explorerSuffix: "?cluster=devnet",
   },
   mainnet: {
     caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-    usdcMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    paymentMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    paymentSymbol: "USDC",
     defaultRpcUrl: "https://api.mainnet-beta.solana.com",
     explorerSuffix: "",
   },

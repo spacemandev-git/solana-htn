@@ -17,6 +17,7 @@ export function adminRoutes(ctx: ServiceContext): Hono {
       maxRewardAtomic: ctx.config.maxRewardAtomic,
       badgeCount: badgeCount(ctx.db),
       solanaBoxId: ctx.config.solanaBoxId,
+      solanaFinalBoxId: ctx.config.solanaFinalBoxId,
     }),
   );
 

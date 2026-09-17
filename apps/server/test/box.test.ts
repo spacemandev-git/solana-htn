@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  ALL_ITEMS,
   BOX_RESPONSE_MAX_BYTES,
   BOXES,
   REGULAR_ITEMS,
@@ -76,46 +77,57 @@ describe('blind boxes', () => {
     expect(unknown.chain_link).toBe(last!.chain_link);
   });
 
-  test('Solana box gives item 8 at once and item 9 only after the quest', async () => {
+  test('the two Solana boxes split immediate item 8 from quest-gated item 9', async () => {
     const regular = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'extended-bay')));
-    const before = await json<BoxResponse>(
+    const first = await json<BoxResponse>(
       await h.box(boxBody('badge-solana', 'solana-booth')),
     );
-    expect(before.new_item).toBe('8');
-    expect(before.all_items).toEqual([...regular.all_items, '8']);
-    expect(before.chain_link).not.toBe('');
+    expect(first.new_item).toBe('8');
+    expect(first.all_items).toEqual([...regular.all_items, '8']);
+    expect(first.chain_link).not.toBe('');
 
-    // Re-tapping before the quest replays 8 and grants nothing.
+    // The first box always replays 8 without another grant.
     const again = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'solana-booth')));
-    expect(again).toEqual(before);
+    expect(again).toEqual(first);
 
-    const pairingCode = before.chain_link.split('/').at(-1)!;
+    // The final box is empty before completion and leaves inventory untouched.
+    const beforeFinal = await json<BoxResponse>(
+      await h.box(boxBody('badge-solana', 'solana-booth-final')),
+    );
+    expect(beforeFinal.new_item).toBe('');
+    expect(beforeFinal.all_items).toEqual(first.all_items);
+
+    const pairingCode = first.chain_link.split('/').at(-1)!;
     expect((await h.post('/api/quest/submit', questBody(pairingCode))).status).toBe(202);
     await waitForQuest(h, 'badge-solana');
 
     const after = await json<BoxResponse>(
-      await h.box(boxBody('badge-solana', 'solana-booth')),
+      await h.box(boxBody('badge-solana', 'solana-booth-final')),
     );
     expect(after.new_item).toBe('9');
     expect(after.all_items.slice(-2)).toEqual(['8', '9']);
     const replay = await json<BoxResponse>(
-      await h.box(boxBody('badge-solana', 'solana-booth')),
+      await h.box(boxBody('badge-solana', 'solana-booth-final')),
     );
     expect(replay.new_item).toBe('9');
     expect(replay).toEqual(after);
   });
 
-  test('a badge that finished the quest before its first Solana tap gets 8 and 9 together', async () => {
-    const first = await json<BoxResponse>(await h.box(boxBody('badge-early', 'extended-bay')));
+  test('every box id yields all nine distinct items after quest completion', async () => {
+    const first = await json<BoxResponse>(await h.box(boxBody('badge-tour-all', 'pairing-only')));
     const pairingCode = first.chain_link.split('/').at(-1)!;
     expect((await h.post('/api/quest/submit', questBody(pairingCode))).status).toBe(202);
-    await waitForQuest(h, 'badge-early');
+    await waitForQuest(h, 'badge-tour-all');
 
-    const solana = await json<BoxResponse>(await h.box(boxBody('badge-early', 'solana-booth')));
-    expect(solana.new_item).toBe('8');
-    expect(solana.all_items.slice(-2)).toEqual(['8', '9']);
-    const replay = await json<BoxResponse>(await h.box(boxBody('badge-early', 'solana-booth')));
-    expect(replay.new_item).toBe('9');
+    let last = first;
+    for (const box of BOXES) {
+      last = await json<BoxResponse>(await h.box(boxBody('badge-tour-all', box.id)));
+      expect(last.new_item).toBe(box.item);
+    }
+
+    expect(last.all_items).toHaveLength(9);
+    expect(new Set(last.all_items).size).toBe(9);
+    expect([...last.all_items].sort()).toEqual([...ALL_ITEMS].sort());
   });
 
   test('identity falls back to public key and empty profile fields never clear data', async () => {
@@ -149,7 +161,8 @@ describe('blind boxes', () => {
     const summary = (await json<BadgeSummary[]>(await h.request('/api/badges')))[0]!;
     await h.post('/api/quest/submit', questBody(summary.badge.pairingCode));
     await waitForQuest(h, 'badge-size');
-    const response = await h.box(boxBody('badge-size', 'solana-booth'));
+    await h.box(boxBody('badge-size', 'solana-booth'));
+    const response = await h.box(boxBody('badge-size', 'solana-booth-final'));
     const body = await json<BoxResponse>(response);
     expect(body.all_items).toHaveLength(9);
     expect(Buffer.byteLength(JSON.stringify(body), 'utf8')).toBeLessThanOrEqual(

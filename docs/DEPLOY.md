@@ -9,12 +9,13 @@
 
 `scripts/deploy.sh` manages the platform in the `solana-htn` GCP project:
 region `northamerica-northeast2` (Toronto), a Docker Artifact Registry
-repository named `htn`, and two public Cloud Run services.
+repository named `htn`, and three public Cloud Run services.
 
 | Service | Shape | Reason |
 | --- | --- | --- |
 | `htn-api` | 1 vCPU, 1 GiB, exactly one always-on instance, concurrency 250, 60-minute timeout, CPU always allocated | SQLite, Litestream, and the SSE hub are process-local. Litestream needs one writer; a second instance would also split live listeners. |
 | `htn-pwa` | 1 vCPU, 512 MiB, zero to four instances, 5-minute timeout | Stateless adapter-node frontend. |
+| `htn-sample` | 1 vCPU, 512 MiB, 0–1 instances, 1-minute timeout | the starter kit itself, serving the reference program; the smoke-test badge submits its URL |
 
 **Never raise the API's maximum instance count** without first replacing
 SQLite replication and the in-process SSE hub with shared services.
@@ -54,13 +55,37 @@ gcloud projects describe solana-htn
 ```
 
 The account needs to enable services, manage Artifact Registry, Cloud Storage,
-and Cloud Run, and submit Cloud Builds. Billing must be enabled.
+Secret Manager, and Cloud Run, and submit Cloud Builds. Billing must be
+enabled.
 
 Defaults can be changed with `--project` / `HTN_PROJECT`, `--region` /
 `HTN_REGION`, `HTN_API_URL` (default `https://api.solana-htn.com`),
 `HTN_PWA_URL` (default `https://solana-htn.com`), and `HTN_SOLANA_BOX_ID`
-(default `solana-booth`). Images are tagged with the short Git SHA plus
+(default `solana-booth`), `HTN_SOLANA_FINAL_BOX_ID` (default
+`solana-booth-final`), `HTN_SOLANA_CLUSTER` (default `devnet`), and the paired
+`HTN_SAMPLE_WALLET` / `HTN_SAMPLE_PROGRAM_ID` values used to configure the
+sample endpoint. Images are tagged with the short Git SHA plus
 `-dirty` when the worktree is dirty; `--tag` overrides it.
+
+### Payer key
+
+Create the Secret Manager secret once with the base58-encoded 64-byte payer
+key:
+
+```bash
+printf '%s' "<base58 64-byte key>" | gcloud secrets create htn-payer-key --data-file=- --project solana-htn
+```
+
+Rotate it by adding a new version:
+
+```bash
+printf '%s' "<base58 64-byte key>" | gcloud secrets versions add htn-payer-key --data-file=- --project solana-htn
+```
+
+Both `up` and `update` grant `htn-run` secret accessor permission when the
+secret exists and bind its latest version to the API as
+`X402_PAYER_SECRET_KEY`. If the secret is absent, deployment continues with
+payments disabled.
 
 ## Commands
 
@@ -71,7 +96,7 @@ Defaults can be changed with `--project` / `HTN_PROJECT`, `--region` /
 Enables the APIs; creates the `htn` repository, the `htn-run` runtime service
 account, and the regional `gs://<project>-htn-db` bucket if missing; grants
 `htn-run` `roles/storage.objectAdmin` on that bucket only; then builds and
-deploys both services. Idempotent.
+deploys all configured services. Idempotent.
 
 ```bash
 ./scripts/deploy.sh update
@@ -84,14 +109,14 @@ message when an API, the repository, or the bucket is missing.
 ./scripts/deploy.sh down [--purge]
 ```
 
-Deletes both services after confirmation. The replicated database, the
+Deletes all three services after confirmation. The replicated database, the
 bucket, the service account, and the image repository remain unless `--purge`
 is given, which also deletes the bucket contents, every image, and the service
 account. The load balancer and DNS are never touched.
 
 ```bash
 ./scripts/deploy.sh status
-./scripts/deploy.sh logs [api|pwa]
+./scripts/deploy.sh logs [api|pwa|sample]
 ./scripts/deploy.sh url
 ```
 
@@ -109,10 +134,15 @@ account. The load balancer and DNS are never touched.
    URL (baked into the client bundle; not a runtime variable) and deploys
    `htn-pwa` with `ORIGIN` set to the public PWA URL for adapter-node CSRF
    checks.
+3. When `HTN_SAMPLE_WALLET` and `HTN_SAMPLE_PROGRAM_ID` are set, builds
+   `deploy/Dockerfile.sample` and deploys `htn-sample`. When they are omitted
+   and the service exists, redeploys its image while preserving its existing
+   wallet and program environment. When they are omitted and the service does
+   not exist, skips the sample image build and deployment.
 
-Both Dockerfiles copy every workspace `package.json` (including `starter/`)
-before `bun install --frozen-lockfile`; add a new workspace to both files or
-the install fails.
+All three Dockerfiles copy every workspace `package.json` (including
+`starter/`) before `bun install --frozen-lockfile`; add a new workspace to all
+three files or the install fails.
 
 ## Runtime environment
 
@@ -125,12 +155,25 @@ API (`htn-api`):
 | `LITESTREAM_BUCKET` | `<project>-htn-db`. |
 | `PWA_ORIGIN`, `PUBLIC_APP_URL` | The public PWA URL. |
 | `SOLANA_BOX_ID` | The `box` id of the Solana station. |
+| `SOLANA_FINAL_BOX_ID` | The final `box` id of the Solana station. |
+| `SOLANA_CLUSTER` | The selected Solana cluster (default `devnet`). |
+| `X402_PAYER_SECRET_KEY` | Latest version of the `htn-payer-key` Secret Manager secret, when present. |
 
-Cluster, payer key, and reward cap are not set by the script; add them with
-`gcloud run services update htn-api --update-env-vars ...` (see
-`docs/API.md` → Configuration) when payments go live.
+The reward cap and RPC URL override are not set by the script; add them with
+`gcloud run services update htn-api --update-env-vars ...` (see `docs/API.md`
+→ Configuration) when needed.
 
 PWA (`htn-pwa`): `NODE_ENV=production`, `ORIGIN=<public PWA URL>`.
+
+Sample endpoint (`htn-sample`):
+
+| Variable | Value |
+| --- | --- |
+| `WALLET_ADDRESS` | `HTN_SAMPLE_WALLET`, the sample endpoint's `payTo` address. |
+| `PROGRAM_ID` | `HTN_SAMPLE_PROGRAM_ID`, the deployed `htn_quest` program served by the sample. |
+| `SOLANA_CLUSTER` | `HTN_SOLANA_CLUSTER` (default `devnet`). |
+| `PRICE_USD` | `1.00`. |
+| `PORT` | Injected by Cloud Run (`8080`). |
 
 ## Resetting the live database
 

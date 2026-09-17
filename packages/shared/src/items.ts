@@ -1,7 +1,9 @@
 /**
- * The blind-box game, pinned. Eight physical boxes on the floor; every box
- * hands out one fixed item. The Solana booth hands out item 8 on the first tap
- * like any other box, and item 9 only once the badge has completed the quest.
+ * The blind-box game, pinned. Nine box ids on the floor; every box hands out
+ * one fixed item. The Solana booth runs two relays: `solana-booth` hands out
+ * item 8 on the first tap like any other box, and `solana-booth-final` hands
+ * out item 9 only once the badge has completed the quest (before that it is an
+ * empty box).
  *
  * Item ids are strings because the badge firmware compares strings ("1", not
  * 1). Ids outside the compiled palette render as a generic placeholder on the
@@ -20,12 +22,13 @@ export interface BoxInfo {
 /** Item the Solana booth hands out on the first tap, no quest required. */
 export const SOLANA_BOX_ITEM = '8';
 
-/** Item the Solana booth hands out only after the badge completed the quest. */
+/** Item the final Solana box hands out only after the badge completed the quest. */
 export const QUEST_REWARD_ITEM = '9';
 
-/** Every box, in floor order. The Solana booth is first. */
+/** Every box, in floor order. The two Solana boxes are first. */
 export const BOXES: readonly BoxInfo[] = [
   { id: 'solana-booth', name: 'Solana Booth', item: SOLANA_BOX_ITEM },
+  { id: 'solana-booth-final', name: 'Solana Booth (Final)', item: QUEST_REWARD_ITEM },
   { id: 'hardware-hub', name: 'Hardware Hub', item: '1' },
   { id: 'extended-bay', name: 'Extended Sponsor Bay', item: '2' },
   { id: 'mentor-cafe', name: 'Mentor Cafe', item: '3' },
@@ -35,19 +38,22 @@ export const BOXES: readonly BoxInfo[] = [
   { id: 'seventh-floor', name: 'Seventh Floor', item: '7' },
 ];
 
-/** `box` id of the Solana station unless SOLANA_BOX_ID overrides it. */
+/** `box` id of the first Solana box (item 8) unless SOLANA_BOX_ID overrides it. */
 export const DEFAULT_SOLANA_BOX_ID = 'solana-booth';
 
-/** Number of physical boxes on the floor, including the Solana booth. */
+/** `box` id of the quest-gated Solana box (item 9) unless SOLANA_FINAL_BOX_ID overrides it. */
+export const DEFAULT_SOLANA_FINAL_BOX_ID = 'solana-booth-final';
+
+/** Number of box ids on the floor, including both Solana boxes. */
 export const BOX_COUNT = BOXES.length;
+
+/** Everything the two Solana boxes hand out: item 8 then item 9. */
+export const SOLANA_ITEMS = [SOLANA_BOX_ITEM, QUEST_REWARD_ITEM] as const;
 
 /** Items the regular (non-Solana) boxes hand out, in box order. */
 export const REGULAR_ITEMS: readonly string[] = BOXES.filter(
-  (box) => box.id !== DEFAULT_SOLANA_BOX_ID,
+  (box) => !(SOLANA_ITEMS as readonly string[]).includes(box.item),
 ).map((box) => box.item);
-
-/** Everything the Solana booth can hand out. */
-export const SOLANA_ITEMS = [SOLANA_BOX_ITEM, QUEST_REWARD_ITEM] as const;
 
 /** Every item id, in display order "1" … "9". */
 export const ALL_ITEMS: readonly string[] = [...REGULAR_ITEMS, ...SOLANA_ITEMS];

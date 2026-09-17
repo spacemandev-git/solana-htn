@@ -79,12 +79,13 @@ values never erase previously recorded non-empty values.
 The serialized response is at most 207 UTF-8 bytes. If necessary, the server
 sets `chain_link` to `""`; it never drops inventory items.
 
-Every box hands out one fixed item, so a repeated `(box, badge)` tap replays
-the same `new_item` and complete response without awarding anything new:
+Each configured box hands out one fixed item. Repeated taps replay the same
+`new_item` without awarding anything new:
 
 | `box` | Zone | Item |
 | --- | --- | --- |
-| `solana-booth` | Solana Booth | `"8"`, then `"9"` after the quest |
+| `solana-booth` | Solana Booth | `"8"` |
+| `solana-booth-final` | Solana Booth (Final) | `"9"` once the quest is complete, otherwise empty |
 | `hardware-hub` | Hardware Hub | `"1"` |
 | `extended-bay` | Extended Sponsor Bay | `"2"` |
 | `mentor-cafe` | Mentor Cafe | `"3"` |
@@ -113,12 +114,13 @@ The box table is pinned in `packages/shared/src/items.ts`. A `box` id that is no
 in it returns `new_item: ""` (the badge shows "Empty box?") but still returns
 the pairing link and the current inventory.
 
-The configured Solana box (default `solana-booth`) hands out item `"8"` on the
-first tap like any other box. Item `"9"` is the quest reward: a tap after the
-badge's quest is `completed` awards it (`new_item: "9"`), and a badge that
-completed the quest before its first Solana tap receives `"8"` and `"9"`
-together with `new_item: "8"`. Any later tap replays the most recent item that
-box handed out. Thus an empty box means the box id is unknown to the server.
+The configured first Solana box (default `solana-booth`) awards item `"8"`
+independent of quest status and replays `new_item: "8"` on every later tap. The
+configured final Solana box (default `solana-booth-final`) is empty until the
+badge's quest is `completed`; it then awards item `"9"` and replays
+`new_item: "9"` on later taps. Unknown ids, and a Solana-item box entry reached
+through the regular-box path because its configured id was overridden, are
+empty boxes.
 
 ## `GET /api/badge/:pairingCode`
 
@@ -148,10 +150,12 @@ Returns the full browser view for the permanently paired badge:
     "chainEnabled": true,
     "cluster": "devnet",
     "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-    "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "paymentMint": "HTNBUCKS_MINT_PLACEHOLDER",
+    "paymentSymbol": "HTN",
     "maxRewardAtomic": 1000000,
     "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
-    "solanaBoxId": "solana-booth"
+    "solanaBoxId": "solana-booth",
+    "solanaFinalBoxId": "solana-booth-final"
   }
 }
 ```
@@ -219,6 +223,8 @@ Submission errors:
 - `409 quest_already_completed`: the badge already completed the quest.
 - `409 quest_already_paid`: an earlier failed run moved money and cannot be
   replaced.
+- `409 program_already_claimed`: that program id belongs to another badge;
+  every hacker must deploy their own `htn_quest`.
 
 An unpaid failed submission may be replaced. Replacement clears its prior
 endpoint, program, progress, message, error, and payment metadata before the new
@@ -230,12 +236,16 @@ The steps always run in this order:
 
 1. `program`: confirm the submitted program is deployed and executable.
 2. `state`: read the message from its quest PDA.
-3. `challenge`: probe the endpoint and validate its x402 terms, cluster, USDC
-   mint, and amount ceiling.
+3. `challenge`: probe the endpoint and validate its x402 terms, cluster,
+   configured payment mint, and amount ceiling.
 4. `payment`: pay the endpoint once, or simulate the request when the chain
    client is disabled.
 5. `proof`: validate the paid JSON response and compare its `message` with the
    message read from chain.
+
+Before a live payment, the payer creates the recipient's associated token
+account for the payment mint idempotently and at the payer's expense, because
+the x402 client emits the token transfer but does not create its destination.
 
 The settlement fields and `paid = true` are committed before proof parsing.
 Consequently, a crash or proof failure after settlement cannot make the badge
@@ -296,7 +306,8 @@ Returns one summary per badge. `items` contains award ids oldest first and
   "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
   "maxRewardAtomic": 1000000,
   "badgeCount": 42,
-  "solanaBoxId": "solana-booth"
+  "solanaBoxId": "solana-booth",
+  "solanaFinalBoxId": "solana-booth-final"
 }
 ```
 
@@ -337,7 +348,7 @@ Sent before and after each pipeline step. `status` is `running`, `ok`, or
   "badgeId": "1042",
   "step": "challenge",
   "status": "ok",
-  "detail": "$1.00 to 11111111111111111111111111111111"
+  "detail": "1.00 HTN to 11111111111111111111111111111111"
 }
 ```
 
@@ -393,7 +404,7 @@ request URL.
       "scheme": "exact",
       "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
       "amount": "1000000",
-      "asset": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+      "asset": "HTNBUCKS_MINT_PLACEHOLDER",
       "payTo": "11111111111111111111111111111111",
       "resource": "http://localhost:3000/api/dev/vendor",
       "description": "HTN mock vendor",
@@ -421,12 +432,14 @@ With any `X-PAYMENT` header, it returns HTTP 200:
 | `DATABASE_PATH` | `./data/htn.db` | SQLite path; `:memory:` is supported. |
 | `PWA_ORIGIN` | `http://localhost:5173` | Allowed browser origin. |
 | `PUBLIC_APP_URL` | `http://localhost:5173` | Base used in badge pairing links. |
-| `SOLANA_BOX_ID` | `solana-booth` | `box` id gated by quest completion. |
+| `SOLANA_BOX_ID` | `solana-booth` | `box` id that hands out item `"8"`. |
+| `SOLANA_FINAL_BOX_ID` | `solana-booth-final` | Quest-gated `box` id that hands out item `"9"`. |
 | `SOLANA_CLUSTER` | `devnet` | Must be `devnet` or `mainnet`. |
 | `SOLANA_RPC_URL` | cluster public RPC | Optional RPC override passed to the chain client. |
 | `X402_PAYER_SECRET_KEY` | unset | Enables live validation/payment when present. |
-| `MAX_REWARD_USD` | `1` | Payment ceiling, converted to six-decimal USDC atomic units and clamped to at least one. |
-| `USDC_MINT` | cluster canonical USDC | The only accepted payment asset. |
+| `MAX_REWARD_USD` | `1` | Payment ceiling in whole tokens, converted to six-decimal atomic units and clamped to at least one; `1` is 1.00 HTN on devnet and $1 USDC on mainnet. |
+| `PAYMENT_MINT` | cluster payment mint | Optional override for the only accepted payment asset; devnet defaults to HTN Bucks and mainnet to USDC. |
+| `PAYMENT_SYMBOL` | cluster payment symbol | Optional display symbol override; devnet defaults to `HTN` and mainnet to `USDC`. |
 
 Changing the configured maximum does not make an already-paid badge eligible
 again. The database payment flag remains authoritative.

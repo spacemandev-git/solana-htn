@@ -5,7 +5,13 @@
  * The quest: deploy the `htn_quest` Anchor program, store a message in its
  * `["quest"]` PDA, and stand up an x402-paywalled HTTP endpoint that returns
  * that message once paid. The server agent calls the endpoint exactly once,
- * pays up to $1 in USDC over x402, and verifies the response against the chain.
+ * pays up to 1.00 of the cluster's payment token over x402, and verifies the
+ * response against the chain.
+ *
+ * The payment token is USDC on mainnet. On devnet it is HTN Bucks (`HTN`), a
+ * plain SPL token we mint ourselves so nobody has to beg a USDC faucet; the
+ * agent's wallet holds the whole supply. Both use six decimals, so "1.00" is
+ * always 1_000_000 base units.
  */
 
 /** Which Solana cluster the quest is running against. */
@@ -24,8 +30,8 @@ export const QUEST_MESSAGE_MAX = 256;
  */
 export const QUEST_MESSAGE_OFFSET = 40;
 
-/** USDC uses 6 decimals on every Solana cluster. */
-export const USDC_DECIMALS = 6;
+/** Base-unit decimals of the payment token (USDC and HTN Bucks both use 6). */
+export const PAYMENT_DECIMALS = 6;
 
 /** The verification pipeline, in the order the server agent runs it. */
 export const QUEST_STEPS = ['program', 'state', 'challenge', 'payment', 'proof'] as const;
@@ -44,8 +50,10 @@ export interface ClusterInfo {
   caip2: string;
   /** Legacy x402 v1 network name. */
   v1Network: string;
-  /** Canonical USDC mint on this cluster. */
-  usdcMint: string;
+  /** The SPL mint the agent pays in and the starter kit charges in. */
+  paymentMint: string;
+  /** Ticker rendered next to amounts of `paymentMint`. */
+  paymentSymbol: string;
   /** Query-string suffix for explorer.solana.com links ('' on mainnet). */
   explorerSuffix: string;
   /** Default public RPC. */
@@ -56,14 +64,17 @@ export const CLUSTERS: Record<Cluster, ClusterInfo> = {
   devnet: {
     caip2: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
     v1Network: 'solana-devnet',
-    usdcMint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+    // HTN Bucks: SPL Token (not 2022), 6 decimals, minted by the agent wallet.
+    paymentMint: 'HTNBUCKS_MINT_PLACEHOLDER',
+    paymentSymbol: 'HTN',
     explorerSuffix: '?cluster=devnet',
     defaultRpcUrl: 'https://api.devnet.solana.com',
   },
   mainnet: {
     caip2: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
     v1Network: 'solana',
-    usdcMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    paymentMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    paymentSymbol: 'USDC',
     explorerSuffix: '',
     defaultRpcUrl: 'https://api.mainnet-beta.solana.com',
   },
@@ -75,14 +86,14 @@ export function networksForCluster(cluster: Cluster): string[] {
   return [info.caip2, info.v1Network];
 }
 
-/** "$0.42" style rendering of a USDC base-unit amount. */
-export function atomicToUsd(atomic: number): string {
-  return `$${(atomic / 10 ** USDC_DECIMALS).toFixed(2)}`;
+/** "0.42 HTN" style rendering of a payment-token base-unit amount. */
+export function formatAtomic(atomic: number, symbol: string): string {
+  return `${(atomic / 10 ** PAYMENT_DECIMALS).toFixed(2)} ${symbol}`;
 }
 
-/** Dollars → USDC base units, rounded down to a whole base unit. */
-export function usdToAtomic(usd: number): number {
-  return Math.floor(usd * 10 ** USDC_DECIMALS);
+/** Whole tokens → base units, rounded down to a whole base unit. */
+export function toAtomic(units: number): number {
+  return Math.floor(units * 10 ** PAYMENT_DECIMALS);
 }
 
 /** explorer.solana.com link for a transaction signature. */

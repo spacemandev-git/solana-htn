@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import type { PaymentOutcome } from '@htn/chain';
 import {
-  atomicToUsd,
+  formatAtomic,
   QUEST_STEPS,
   QuestProof,
   type Badge,
@@ -60,6 +60,23 @@ export class QuestService {
     }
     if (this.running.has(badge.badgeId)) {
       throw new HttpError(409, 'quest_verifying', 'this badge is already being verified');
+    }
+
+    const claimant = one<{ badge_id: string }>(
+      this.ctx.db,
+      `SELECT badge_id FROM quest_submissions
+        WHERE program_id = ? AND badge_id != ?
+          AND (status IN ('completed', 'verifying') OR paid = 1)
+        LIMIT 1`,
+      request.programId,
+      badge.badgeId,
+    );
+    if (claimant) {
+      throw new HttpError(
+        409,
+        'program_already_claimed',
+        'that program id belongs to another badge; every hacker deploys their own htn_quest',
+      );
     }
 
     const submittedAt = nowIso();
@@ -247,7 +264,7 @@ export class QuestService {
           submission.badgeId,
           step,
           'ok',
-          `${atomicToUsd(result.requirement.amountAtomic)} to ${result.requirement.payTo}`,
+          `${formatAtomic(result.requirement.amountAtomic, this.ctx.config.paymentSymbol)} to ${result.requirement.payTo}`,
         );
         continue;
       }

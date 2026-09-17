@@ -6,8 +6,9 @@ hacker's phone. The phone shows a single quest:
 
 > Deploy a tiny Anchor program that stores a message on Solana. Paywall an HTTP
 > endpoint with **x402**. Submit the URL — our agent calls it once, pays your
-> price in USDC (up to **$1**, straight to your wallet), and verifies the paid
-> response against the chain.
+> price in the cluster's payment token, straight to your wallet, and verifies
+> the paid response against the chain. Devnet pays HTN Bucks (`HTN`); mainnet
+> pays USDC.
 
 The reward is the payment itself. No points, no items, no custody.
 
@@ -28,11 +29,13 @@ payments are simulated until you configure a payer key.
 ```bash
 # .env
 SOLANA_CLUSTER=devnet
-X402_PAYER_SECRET_KEY=<base58 64-byte key holding devnet USDC + a little SOL>
+X402_PAYER_SECRET_KEY=<base58 64-byte key holding HTN Bucks + a little SOL>
 ```
 
 Restart the server; `/api/health` reports `chainEnabled: true` and the agent
-pays for real (devnet USDC from <https://faucet.circle.com>).
+pays for real. Devnet uses HTN Bucks (`HTN`), an SPL token we mint whose supply
+the agent wallet holds, so hackers need no tokens and no faucet. Mainnet uses
+USDC.
 
 ## Layout
 
@@ -60,8 +63,8 @@ Everything a hacker needs is in [`starter/`](starter/) and
 [docs/QUEST.md](docs/QUEST.md): deploy `program/` (htn_quest) to devnet, write
 a message into its `["quest"]` PDA, run the starter's x402 server with their
 own wallet as `payTo`, expose it, submit. The agent's five checks — program
-deployed, PDA readable, valid 402 terms ≤ $1 USDC, payment settles, response
-matches chain state — stream to their phone as a terminal log.
+deployed, PDA readable, valid 402 terms within the token cap, payment settles,
+response matches chain state — stream to their phone as a terminal log.
 
 ## Commands
 

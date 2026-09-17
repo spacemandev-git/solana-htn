@@ -3,13 +3,14 @@ import {
   QUEST_REWARD_ITEM,
   SOLANA_BOX_ITEM,
   boxById,
+  isSolanaItem,
   type Award,
   type Badge,
   type BoxRequest,
   type BoxResponse,
 } from '@htn/shared';
 import { pairingUrl } from '../config.ts';
-import { awardsAtBox, grantAward, listAwards } from './awards.ts';
+import { grantAward, listAwards } from './awards.ts';
 import { upsertBadge } from './badges.ts';
 import type { ServiceContext } from './context.ts';
 import { nowIso } from './context.ts';
@@ -39,26 +40,26 @@ export function decideBox(ctx: ServiceContext, request: BoxRequest): BoxDecision
   const owned = new Set(listAwards(ctx.db, badgeId).map((award) => award.item));
   let newItem = '';
   if (request.box === ctx.config.solanaBoxId) {
-    // Item 8 comes free on the first tap; item 9 waits for the quest. A badge
-    // that finished the quest before ever tapping gets both at once.
-    const completed = getQuestSubmission(ctx.db, badgeId)?.status === 'completed';
+    // The first Solana box always hands out (or replays) item 8.
     if (!owned.has(SOLANA_BOX_ITEM)) {
       grantAward(ctx.db, badgeId, SOLANA_BOX_ITEM, request.box, at);
-      if (completed) grantAward(ctx.db, badgeId, QUEST_REWARD_ITEM, request.box, at);
-      newItem = SOLANA_BOX_ITEM;
-    } else if (completed && !owned.has(QUEST_REWARD_ITEM)) {
-      grantAward(ctx.db, badgeId, QUEST_REWARD_ITEM, request.box, at);
+    }
+    newItem = SOLANA_BOX_ITEM;
+  } else if (request.box === ctx.config.solanaFinalBoxId) {
+    // The final Solana box is empty until the quest is complete, then hands
+    // out (or replays) item 9.
+    const completed = getQuestSubmission(ctx.db, badgeId)?.status === 'completed';
+    if (completed) {
+      if (!owned.has(QUEST_REWARD_ITEM)) {
+        grantAward(ctx.db, badgeId, QUEST_REWARD_ITEM, request.box, at);
+      }
       newItem = QUEST_REWARD_ITEM;
-    } else {
-      // Replay: the most recent thing this box handed out.
-      const prior = awardsAtBox(ctx.db, badgeId, request.box);
-      newItem = prior.at(-1)?.item ?? '';
     }
   } else {
-    // Every regular box hands out one fixed item. Unknown box ids are an
-    // empty box, but the badge still gets its console link.
+    // Regular boxes hand out one fixed non-Solana item. Unknown box ids and
+    // Solana items reached through this branch are empty boxes.
     const item = boxById(request.box)?.item;
-    if (item !== undefined && item !== SOLANA_BOX_ITEM) {
+    if (item !== undefined && !isSolanaItem(item)) {
       if (!owned.has(item)) grantAward(ctx.db, badgeId, item, request.box, at);
       newItem = item;
     }

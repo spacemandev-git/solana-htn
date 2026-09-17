@@ -23,7 +23,7 @@ describe('mock x402 vendor', () => {
           scheme: 'exact',
           network: CLUSTERS.devnet.caip2,
           amount: '1000000',
-          asset: CLUSTERS.devnet.usdcMint,
+          asset: CLUSTERS.devnet.paymentMint,
           payTo: '11111111111111111111111111111111',
           resource: 'http://localhost/api/dev/vendor',
           description: 'HTN mock vendor',

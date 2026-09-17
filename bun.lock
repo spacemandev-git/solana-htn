@@ -46,6 +46,8 @@
       "version": "0.1.0",
       "dependencies": {
         "@htn/shared": "workspace:*",
+        "@solana-program/token": "^0.9.0",
+        "@solana-program/token-2022": "^0.6.1",
         "@solana/kit": "^5.0.0",
         "@x402/fetch": "~2.24.0",
         "@x402/svm": "~2.24.0",

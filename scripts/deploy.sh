@@ -10,10 +10,16 @@ REGION="${HTN_REGION:-northamerica-northeast2}"
 REPOSITORY="htn"
 API_SERVICE="htn-api"
 PWA_SERVICE="htn-pwa"
+SAMPLE_SERVICE="htn-sample"
 # Public hostnames served by the global HTTPS load balancer (see docs/DEPLOY.md).
 API_PUBLIC_URL="${HTN_API_URL:-https://api.solana-htn.com}"
 PWA_PUBLIC_URL="${HTN_PWA_URL:-https://solana-htn.com}"
 SOLANA_BOX_ID="${HTN_SOLANA_BOX_ID:-solana-booth}"
+SOLANA_FINAL_BOX_ID="${HTN_SOLANA_FINAL_BOX_ID:-solana-booth-final}"
+SOLANA_CLUSTER="${HTN_SOLANA_CLUSTER:-devnet}"
+PAYER_SECRET="htn-payer-key"                      # Secret Manager secret holding X402_PAYER_SECRET_KEY
+SAMPLE_WALLET="${HTN_SAMPLE_WALLET:-}"            # payTo of the sample endpoint
+SAMPLE_PROGRAM_ID="${HTN_SAMPLE_PROGRAM_ID:-}"    # deployed htn_quest program the sample serves
 # A dedicated runtime identity so the database bucket is not readable by every
 # other workload in this shared project.
 RUNTIME_SA="htn-run"
@@ -32,10 +38,11 @@ Usage: ./scripts/deploy.sh <command> [options]
 Commands:
   up                 Enable APIs, create missing infrastructure, and deploy
   update             Deploy only; fail if required infrastructure is missing
-  down [--purge]     Delete both services; also delete durable data and infrastructure with --purge
+  down [--purge]     Delete all three services; also delete durable data and infrastructure with --purge
   status             Show service URLs, latest revisions, and traffic
-  logs [api|pwa]     Tail service logs (default: api)
-  url                Print the API and PWA URLs, one per line
+  logs [api|pwa|sample]
+                     Tail service logs (default: api)
+  url                Print the API, PWA, and optional sample URLs, one per line
 
 Global flags:
   --project ID       GCP project (default: solana-htn; env: HTN_PROJECT)
@@ -47,6 +54,12 @@ Global flags:
 
 Command flags:
   --purge            With down, also delete the database bucket and repository
+
+Environment variables:
+  HTN_SOLANA_FINAL_BOX_ID   Final Solana box id (default: solana-booth-final)
+  HTN_SOLANA_CLUSTER        Solana cluster (default: devnet)
+  HTN_SAMPLE_WALLET         Sample endpoint payTo wallet (set with program id)
+  HTN_SAMPLE_PROGRAM_ID     Sample endpoint program id (set with wallet)
 EOF
 }
 
@@ -68,7 +81,7 @@ parse_args() {
         [ -z "$COMMAND" ] || fail "choose exactly one command"
         COMMAND="$1"
         ;;
-      api|pwa)
+      api|pwa|sample)
         [ "$COMMAND" = "logs" ] || fail "'$1' is only valid after the logs command"
         LOG_TARGET="$1"
         ;;
@@ -101,6 +114,10 @@ parse_args() {
   done
 
   [ -n "$COMMAND" ] || fail "a command is required (run ./scripts/deploy.sh --help)"
+  if { [ -n "$SAMPLE_WALLET" ] && [ -z "$SAMPLE_PROGRAM_ID" ]; } \
+      || { [ -z "$SAMPLE_WALLET" ] && [ -n "$SAMPLE_PROGRAM_ID" ]; }; then
+    fail "HTN_SAMPLE_WALLET and HTN_SAMPLE_PROGRAM_ID must be set together"
+  fi
   if $PURGE && [ "$COMMAND" != "down" ]; then
     fail "--purge is only valid with down"
   fi
@@ -193,6 +210,20 @@ grant_bucket_access() {
   echo "Granted $email object access to gs://$bucket"
 }
 
+ensure_payer_secret_access() {
+  local email
+  email="$(runtime_sa_email)"
+  if gcloud secrets describe "$PAYER_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+    gcloud secrets add-iam-policy-binding "$PAYER_SECRET" \
+      --member "serviceAccount:$email" \
+      --role roles/secretmanager.secretAccessor \
+      --project "$PROJECT" >/dev/null
+    echo "Granted $email access to secret $PAYER_SECRET"
+  else
+    echo "Payer key: secret $PAYER_SECRET not found; payments stay disabled until it is created"
+  fi
+}
+
 enable_apis() {
   gcloud services enable \
     run.googleapis.com \
@@ -245,6 +276,7 @@ deploy_platform() {
   local registry="$REGION-docker.pkg.dev/$PROJECT/$REPOSITORY"
   local server_image="$registry/server:$TAG"
   local pwa_image="$registry/pwa:$TAG"
+  local sample_image="$registry/sample:$TAG"
   local node_env="production"
   $DEV_ROUTES && node_env="development"
 
@@ -259,6 +291,16 @@ deploy_platform() {
   bucket="$(database_bucket)"
   env_vars="NODE_ENV=$node_env,DATABASE_PATH=/tmp/htn.db,LITESTREAM_BUCKET=$bucket"
   env_vars="$env_vars,PWA_ORIGIN=$PWA_PUBLIC_URL,PUBLIC_APP_URL=$PWA_PUBLIC_URL,SOLANA_BOX_ID=$SOLANA_BOX_ID"
+  env_vars="$env_vars,SOLANA_FINAL_BOX_ID=$SOLANA_FINAL_BOX_ID,SOLANA_CLUSTER=$SOLANA_CLUSTER"
+
+  local -a secret_args
+  if gcloud secrets describe "$PAYER_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
+    secret_args=(--update-secrets "X402_PAYER_SECRET_KEY=$PAYER_SECRET:latest")
+    echo "Payer key: secret $PAYER_SECRET (payments live)"
+  else
+    secret_args=(--clear-secrets)
+    echo "Payer key: secret $PAYER_SECRET not found; deploying with payments disabled"
+  fi
 
   local api_url
   api_url="$(gcloud run deploy "$API_SERVICE" \
@@ -270,7 +312,7 @@ deploy_platform() {
     --no-cpu-throttling \
     --cpu=1 --memory=1Gi \
     --set-env-vars "$env_vars" \
-    --clear-secrets \
+    "${secret_args[@]}" \
     --service-account "$(runtime_sa_email)" \
     --project "$PROJECT" \
     --format='value(status.url)')"
@@ -290,6 +332,40 @@ deploy_platform() {
     --format='value(status.url)')"
   [ -n "$pwa_url" ] || fail "the PWA deployed but Cloud Run returned no service URL"
 
+  local sample_url=""
+  local sample_deployed=false
+  if [ -n "$SAMPLE_WALLET" ] && [ -n "$SAMPLE_PROGRAM_ID" ]; then
+    echo "Building sample image $sample_image"
+    build_image "$sample_image" "deploy/Dockerfile.sample"
+    sample_url="$(gcloud run deploy "$SAMPLE_SERVICE" \
+      --image "$sample_image" \
+      --region "$REGION" --platform managed --allow-unauthenticated \
+      --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --timeout=60 \
+      --set-env-vars "NODE_ENV=production,WALLET_ADDRESS=$SAMPLE_WALLET,PROGRAM_ID=$SAMPLE_PROGRAM_ID,SOLANA_CLUSTER=$SOLANA_CLUSTER,PRICE_USD=1.00" \
+      --service-account "$(runtime_sa_email)" \
+      --project "$PROJECT" \
+      --format='value(status.url)')"
+    sample_deployed=true
+  elif service_exists "$SAMPLE_SERVICE"; then
+    echo "htn-sample: reusing its existing WALLET_ADDRESS/PROGRAM_ID"
+    echo "Building sample image $sample_image"
+    build_image "$sample_image" "deploy/Dockerfile.sample"
+    sample_url="$(gcloud run deploy "$SAMPLE_SERVICE" \
+      --image "$sample_image" \
+      --region "$REGION" --platform managed --allow-unauthenticated \
+      --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --timeout=60 \
+      --service-account "$(runtime_sa_email)" \
+      --project "$PROJECT" \
+      --format='value(status.url)')"
+    sample_deployed=true
+  else
+    echo "htn-sample: skipped (set HTN_SAMPLE_WALLET and HTN_SAMPLE_PROGRAM_ID to deploy the sample endpoint)"
+  fi
+  if $sample_deployed; then
+    [ -n "$sample_url" ] || fail "the sample deployed but Cloud Run returned no service URL"
+    echo "SAMPLE: $sample_url/quest"
+  fi
+
   echo "API: $api_url  (public: $API_PUBLIC_URL)"
   echo "PWA: $pwa_url  (public: $PWA_PUBLIC_URL)"
 }
@@ -300,11 +376,13 @@ up() {
   ensure_service_account
   ensure_bucket
   grant_bucket_access
+  ensure_payer_secret_access
   deploy_platform
 }
 
 update() {
   require_infrastructure
+  ensure_payer_secret_access
   deploy_platform
 }
 
@@ -334,13 +412,14 @@ delete_service() {
 }
 
 down() {
-  confirm "This deletes both Cloud Run services. The replicated database remains in Cloud Storage."
+  confirm "This deletes all three Cloud Run services. The replicated database remains in Cloud Storage."
   if $PURGE; then
     confirm "PURGE also permanently deletes the database bucket and every image in '$REPOSITORY'."
   fi
 
   delete_service "$API_SERVICE"
   delete_service "$PWA_SERVICE"
+  delete_service "$SAMPLE_SERVICE"
 
   if ! $PURGE; then
     return
@@ -378,22 +457,23 @@ status() {
   found="$(gcloud run services list \
     --region "$REGION" --platform managed --project "$PROJECT" \
     --format='value(metadata.name)' 2>/dev/null \
-    | grep -cE "^($API_SERVICE|$PWA_SERVICE)$" || true)"
+    | grep -cE "^($API_SERVICE|$PWA_SERVICE|$SAMPLE_SERVICE)$" || true)"
 
   if [ "$found" -eq 0 ]; then
-    echo "No $API_SERVICE or $PWA_SERVICE in $PROJECT/$REGION; run './scripts/deploy.sh up'"
+    echo "No $API_SERVICE, $PWA_SERVICE, or $SAMPLE_SERVICE in $PROJECT/$REGION; run './scripts/deploy.sh up'"
     return
   fi
 
   gcloud run services list \
     --region "$REGION" --platform managed --project "$PROJECT" \
-    --filter="metadata.name=$API_SERVICE OR metadata.name=$PWA_SERVICE" \
+    --filter="metadata.name=$API_SERVICE OR metadata.name=$PWA_SERVICE OR metadata.name=$SAMPLE_SERVICE" \
     --format='table(metadata.name:label=SERVICE,status.url:label=URL,status.latestReadyRevisionName:label=LATEST_REVISION,status.traffic[].revisionName.flatten():label=TRAFFIC_REVISION,status.traffic[].percent.flatten():label=TRAFFIC_PERCENT)'
 }
 
 logs() {
   local service="$API_SERVICE"
   [ "$LOG_TARGET" = "pwa" ] && service="$PWA_SERVICE"
+  [ "$LOG_TARGET" = "sample" ] && service="$SAMPLE_SERVICE"
   gcloud run services logs tail "$service" \
     --region "$REGION" --project "$PROJECT"
 }
@@ -415,6 +495,9 @@ urls() {
   api_url="$(service_url "$API_SERVICE")"
   pwa_url="$(service_url "$PWA_SERVICE")"
   printf '%s\n%s\n' "$api_url" "$pwa_url"
+  if service_exists "$SAMPLE_SERVICE"; then
+    printf '%s/quest\n' "$(service_url "$SAMPLE_SERVICE")"
+  fi
 }
 
 parse_args "$@"

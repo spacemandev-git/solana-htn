@@ -18,7 +18,7 @@ test('disabled client probes normally and pays once with a simulated header', as
               {
                 scheme: 'exact',
                 network: CLUSTERS.devnet.caip2,
-                asset: CLUSTERS.devnet.usdcMint,
+                asset: CLUSTERS.devnet.paymentMint,
                 payTo: 'vendor-wallet',
                 amount: '750000',
               },
@@ -37,7 +37,7 @@ test('disabled client probes normally and pays once with a simulated header', as
   try {
     const chain = await createQuestChain({
       cluster: 'devnet',
-      usdcMint: CLUSTERS.devnet.usdcMint,
+      paymentMint: CLUSTERS.devnet.paymentMint,
       maxPaymentAtomic: 1_000_000,
     });
     expect(chain.enabled).toBe(false);

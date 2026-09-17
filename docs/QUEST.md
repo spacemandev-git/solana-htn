@@ -2,8 +2,9 @@
 
 Your mission is to deploy `htn_quest`, store a message in its singleton PDA,
 and sell that exact message from an x402-protected HTTP endpoint for no more
-than $1 in USDC. The copyable [starter kit](../starter/) contains the Hono
-server, the on-chain message helper, and an environment template.
+than 1.00 of the cluster's payment token. The copyable
+[starter kit](../starter/) contains the Hono server, the on-chain message
+helper, and an environment template.
 
 ## 1. Prepare your tools and wallet
 
@@ -18,9 +19,10 @@ solana airdrop 2
 solana balance
 ```
 
-Never share the keypair. If you want to test a paid request yourself, use the
-[Circle faucet](https://faucet.circle.com/) to fund the paying wallet with
-devnet USDC. SOL covers transaction fees; the x402 payment itself uses USDC.
+Never share the keypair. On devnet, you only need devnet SOL for deployment
+fees. The event agent pays in **HTN Bucks (`HTN`)**, a plain SPL token with six
+decimals that the event mints; you do not need any payment tokens or a faucet.
+Its mint address is pinned in `starter/src/chain.ts`. On mainnet, the same code charges USDC.
 
 ## 2. Build and deploy
 
@@ -69,8 +71,9 @@ cp .env.example .env
 ```
 
 Set `PROGRAM_ID` to the deployed ID and `WALLET_ADDRESS` to the Solana address
-that should receive USDC. Then write a non-empty message of at most 256 UTF-8
-bytes:
+that should receive the cluster's payment token. If its token account does not
+exist yet, the agent creates it and pays the rent—you do not. Then write a
+non-empty message of at most 256 UTF-8 bytes:
 
 ```bash
 bun run set-message "the robots dream in blockhashes"
@@ -90,6 +93,8 @@ WALLET_ADDRESS=<your Solana wallet address>
 PROGRAM_ID=<your deployed program id>
 PRICE_USD=1.00
 SOLANA_CLUSTER=devnet
+PAYMENT_MINT=
+PAYMENT_SYMBOL=
 SOLANA_RPC_URL=
 FACILITATOR_URL=https://facilitator.payai.network
 KEYPAIR_PATH=~/.config/solana/id.json
@@ -104,10 +109,17 @@ curl -i http://localhost:4021/quest
 curl -s http://localhost:4021/healthz
 ```
 
-The first request receives a `402 Payment Required` challenge describing the exact USDC payment. An x402 client signs a payment and retries with the `X-PAYMENT` header. The facilitator verifies the authorization and settles the USDC transfer on Solana. After settlement, the middleware allows the handler to return HTTP 200 with the on-chain message.
+The first request receives a `402 Payment Required` challenge describing the
+exact payment in the cluster's payment mint. An x402 client signs a payment and
+retries with the `X-PAYMENT` header. The facilitator verifies the authorization
+and settles the token transfer on Solana. After settlement, the middleware
+allows the handler to return HTTP 200 with the on-chain message. Leave
+`PAYMENT_MINT` and `PAYMENT_SYMBOL` blank to use the cluster defaults; they are
+available as explicit overrides when needed. `PRICE_USD` keeps its legacy name:
+`1.00` means 1,000,000 base units of the configured payment mint.
 
-The starter refuses to boot if `PRICE_USD` exceeds `$1.00`, matching the event
-agent's payment cap.
+The starter refuses to boot if `PRICE_USD` exceeds `1.00`, matching the event
+agent's one-token payment cap.
 
 ## 5. Expose and submit
 
@@ -128,18 +140,20 @@ The checks happen in this order:
 
 1. The program ID is deployed on the selected cluster.
 2. The program's `['quest']` PDA contains a valid UTF-8 message.
-3. The endpoint advertises exact USDC terms on that cluster for no more than $1.
+3. The endpoint returns x402 terms for an exact payment in the cluster's payment mint, for no more than 1.00 token (`PRICE_USD`).
 4. The agent pays the endpoint once.
 5. The paid response's `message` exactly matches the message read from chain.
 
-The settled USDC lands directly at `WALLET_ADDRESS`. The response must preserve
-the on-chain string exactly—whitespace, capitalization, and Unicode all count.
+The settled payment token lands directly at `WALLET_ADDRESS`. The agent creates
+its token account if needed and pays that account's rent. The response must
+preserve the on-chain string exactly—whitespace, capitalization, and Unicode
+all count.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
 | Facilitator errors or HTTP 502 | Confirm `FACILITATOR_URL` is reachable, the configured RPC is public, and the facilitator supports the selected CAIP-2 network. Restart after editing `.env`. |
-| The 402 uses the wrong network or USDC mint | Make `SOLANA_CLUSTER` match the deployment, remove stale `SOLANA_RPC_URL` overrides, and restart. Devnet and mainnet have different network IDs and assets. |
+| The 402 uses the wrong network or payment mint | Make `SOLANA_CLUSTER` match the deployment, remove stale `SOLANA_RPC_URL` or `PAYMENT_MINT` overrides, and restart. Devnet and mainnet have different network IDs and payment mints. |
 | The agent reports a message mismatch | Run `bun run set-message "…"` again, wait for confirmation, and return the exact on-chain string from `/quest` without trimming or decoration. |
 | The badge says “agent already paid” | The verifier pays each endpoint only once to avoid duplicate charges. Keep the submitted endpoint stable and ask event staff to reset the attempt. |

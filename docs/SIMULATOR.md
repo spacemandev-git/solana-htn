@@ -17,12 +17,13 @@ unauthenticated because the physical relay cannot attach headers.
 
 The tool keeps six seeded fake badges in browser storage under `htn.sim.v2`.
 Each badge has a user id, name, email, and an optional public key. Pick a badge
-and one of the eight fixed boxes, then select **Tap box**. Each box hands out
+and one of the nine fixed boxes, then select **Tap box**. Each box hands out
 one fixed item:
 
 | Box id | Zone | Item |
 | --- | --- | --- |
-| `solana-booth` | Solana Booth | `8` (`9` after the quest) |
+| `solana-booth` | Solana Booth | `8` |
+| `solana-booth-final` | Solana Booth (Final) | `9` after the quest, otherwise empty |
 | `hardware-hub` | Hardware Hub | `1` |
 | `extended-bay` | Extended Sponsor Bay | `2` |
 | `mentor-cafe` | Mentor Cafe | `3` |
@@ -31,7 +32,7 @@ one fixed item:
 | `fifth-floor` | Fifth Floor Hacking Space | `6` |
 | `seventh-floor` | Seventh Floor | `7` |
 
-The box matching `solanaBoxId` from `GET /api/health` is labeled **Solana box**.
+The boxes matching `solanaBoxId` and `solanaFinalBoxId` from `GET /api/health` are labeled **Solana box (item 8)** and **Solana final box (item 9, quest-gated)**, respectively.
 Every tap sends:
 
 ```json
@@ -63,7 +64,7 @@ badge selection stored in the browser.
 When the server has no chain payer configured, it uses its disabled chain
 client. Program and account reads are skipped, and payment is simulated. The
 development mock vendor accepts that simulated payment, so the complete box,
-inventory, and verification flow works without RPC, USDC, or a deployed
+inventory, and verification flow works without RPC, tokens, or a deployed
 program.
 
 1. Start `bun run dev`, open `/sim`, and select **Reset server**.

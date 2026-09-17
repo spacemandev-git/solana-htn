@@ -1,5 +1,11 @@
 /** Environment parsing with local defaults for a fresh development clone. */
-import { CLUSTERS, DEFAULT_SOLANA_BOX_ID, usdToAtomic, type Cluster } from '@htn/shared';
+import {
+  CLUSTERS,
+  DEFAULT_SOLANA_BOX_ID,
+  DEFAULT_SOLANA_FINAL_BOX_ID,
+  toAtomic,
+  type Cluster,
+} from '@htn/shared';
 
 export interface ServerConfig {
   nodeEnv: string;
@@ -12,8 +18,10 @@ export interface ServerConfig {
   solanaRpcUrl: string | undefined;
   x402PayerSecretKey: string | undefined;
   maxRewardAtomic: number;
-  usdcMint: string;
+  paymentMint: string;
+  paymentSymbol: string;
   solanaBoxId: string;
+  solanaFinalBoxId: string;
   devRoutesEnabled: boolean;
 }
 
@@ -39,8 +47,8 @@ function parseCluster(value: string | undefined): Cluster {
 }
 
 function parseMaxRewardAtomic(value: string | undefined): number {
-  const dollars = Number.parseFloat(value ?? '1');
-  return Math.max(1, usdToAtomic(Number.isFinite(dollars) ? dollars : 1));
+  const units = Number.parseFloat(value ?? '1');
+  return Math.max(1, toAtomic(Number.isFinite(units) ? units : 1));
 }
 
 export function loadConfig(env: EnvLike = process.env): ServerConfig {
@@ -59,8 +67,10 @@ export function loadConfig(env: EnvLike = process.env): ServerConfig {
     solanaRpcUrl: trimmed(env.SOLANA_RPC_URL),
     x402PayerSecretKey: trimmed(env.X402_PAYER_SECRET_KEY),
     maxRewardAtomic: parseMaxRewardAtomic(env.MAX_REWARD_USD),
-    usdcMint: trimmed(env.USDC_MINT) ?? CLUSTERS[solanaCluster].usdcMint,
+    paymentMint: trimmed(env.PAYMENT_MINT) ?? CLUSTERS[solanaCluster].paymentMint,
+    paymentSymbol: trimmed(env.PAYMENT_SYMBOL) ?? CLUSTERS[solanaCluster].paymentSymbol,
     solanaBoxId: trimmed(env.SOLANA_BOX_ID) ?? DEFAULT_SOLANA_BOX_ID,
+    solanaFinalBoxId: trimmed(env.SOLANA_FINAL_BOX_ID) ?? DEFAULT_SOLANA_FINAL_BOX_ID,
     devRoutesEnabled: !isProduction,
   };
 }

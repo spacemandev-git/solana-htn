@@ -23,6 +23,8 @@ interface ServerConfig {
   programId: string;
   priceUsd: number;
   cluster: Cluster;
+  paymentMint: string;
+  paymentSymbol: string;
   rpcUrl: string;
   facilitatorUrl: string;
   port: number;
@@ -64,6 +66,10 @@ function loadConfig(): ServerConfig {
     programId: requiredEnv("PROGRAM_ID"),
     priceUsd,
     cluster,
+    paymentMint:
+      process.env.PAYMENT_MINT?.trim() || CLUSTERS[cluster].paymentMint,
+    paymentSymbol:
+      process.env.PAYMENT_SYMBOL?.trim() || CLUSTERS[cluster].paymentSymbol,
     rpcUrl:
       process.env.SOLANA_RPC_URL?.trim() || CLUSTERS[cluster].defaultRpcUrl,
     facilitatorUrl:
@@ -105,7 +111,7 @@ export function createApp(dependencies: AppDependencies = {}) {
             scheme: "exact",
             network: cluster.caip2,
             payTo: config.walletAddress,
-            price: { amount, asset: cluster.usdcMint },
+            price: { amount, asset: config.paymentMint },
           },
           description: "The on-chain Hack the North quest message",
           mimeType: "application/json",
@@ -129,7 +135,8 @@ if (import.meta.main) {
   const cluster = CLUSTERS[config.cluster];
   Bun.serve({ port: config.port, fetch: app.fetch });
   console.log(`Quest price: $${config.priceUsd.toFixed(2)}`);
-  console.log(`USDC payTo: ${config.walletAddress}`);
+  console.log(`Pay token: ${config.paymentSymbol} (${config.paymentMint})`);
+  console.log(`payTo: ${config.walletAddress}`);
   console.log(`x402 network: ${cluster.caip2}`);
   console.log(`Public URL: http://localhost:${config.port}/quest (replace localhost when sharing)`);
 }

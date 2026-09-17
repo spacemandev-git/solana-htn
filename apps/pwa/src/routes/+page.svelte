@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { dev } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import {
+		BOX_COUNT,
+		DEFAULT_SOLANA_BOX_ID,
+		DEFAULT_SOLANA_FINAL_BOX_ID,
+		boxName
+	} from '@htn/shared';
+
+	const SOLANA_BOX_NAME = boxName(DEFAULT_SOLANA_BOX_ID);
+	const SOLANA_FINAL_BOX_NAME = boxName(DEFAULT_SOLANA_FINAL_BOX_ID);
 
 	let code = $state('');
 
@@ -18,7 +27,7 @@
 		{
 			prompt: '04',
 			title: 'unlock the finale',
-			copy: 'Tap the Solana Booth for item 8, then finish the quest to unlock item 9.'
+			copy: `Tap ${SOLANA_BOX_NAME} for item 8, then finish the quest and tap ${SOLANA_FINAL_BOX_NAME} for item 9.`
 		}
 	] as const;
 </script>
@@ -38,10 +47,10 @@
 
 		<div class="content">
 			<p class="label label-bright">$ htn badge --collect</p>
-			<h1 class="display">8 boxes.<br /><span>9 items.</span><br />One quest.</h1>
+			<h1 class="display">{BOX_COUNT} boxes.<br /><span>9 items.</span><br />One quest.</h1>
 			<p class="body lede">
-				Tap your way through the blind boxes, track your collection here, and tap the Solana Booth
-				for item 8, and finish the quest to unlock item 9.
+				Tap your way through the blind boxes, track your collection here, tap {SOLANA_BOX_NAME} for
+				item 8, and finish the quest to unlock item 9 at {SOLANA_FINAL_BOX_NAME}.
 			</p>
 
 			<ol class="flow">

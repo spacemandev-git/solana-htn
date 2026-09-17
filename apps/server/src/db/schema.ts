@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS quest_submissions (
   submitted_at       TEXT NOT NULL,
   completed_at       TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_quest_program ON quest_submissions(program_id);
 `;
 
 /** Child-first order, so wiping in dev never trips a foreign key. */

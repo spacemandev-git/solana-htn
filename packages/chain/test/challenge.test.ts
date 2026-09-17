@@ -8,7 +8,7 @@ import {
 
 const config = {
   cluster: 'devnet' as const,
-  usdcMint: CLUSTERS.devnet.usdcMint,
+  paymentMint: CLUSTERS.devnet.paymentMint,
   maxPaymentAtomic: 1_000_000,
 };
 
@@ -16,7 +16,7 @@ function requirement(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     scheme: 'exact',
     network: CLUSTERS.devnet.caip2,
-    asset: CLUSTERS.devnet.usdcMint,
+    asset: CLUSTERS.devnet.paymentMint,
     payTo: 'vendor-wallet',
     amount: '420000',
     description: 'quest message',
@@ -35,7 +35,7 @@ describe('x402 challenge validation', () => {
       requirement: {
         scheme: 'exact',
         network: CLUSTERS.devnet.caip2,
-        asset: CLUSTERS.devnet.usdcMint,
+        asset: CLUSTERS.devnet.paymentMint,
         payTo: 'vendor-wallet',
         amountAtomic: 420_000,
         description: 'quest message',
@@ -77,11 +77,11 @@ describe('x402 challenge validation', () => {
 
   test('rejects the wrong asset', () => {
     const result = validateChallengeEnvelope(
-      { accepts: [requirement({ asset: CLUSTERS.mainnet.usdcMint })] },
+      { accepts: [requirement({ asset: CLUSTERS.mainnet.paymentMint })] },
       config,
     );
     expect(result).toMatchObject({ ok: false, requirement: null });
-    expect(result.error).toContain(CLUSTERS.devnet.usdcMint);
+    expect(result.error).toContain(CLUSTERS.devnet.paymentMint);
   });
 
   test('rejects an over-cap amount precisely', () => {

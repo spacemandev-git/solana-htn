@@ -31,7 +31,7 @@ export function devRoutes(ctx: ServiceContext): Hono {
             scheme: 'exact',
             network: CLUSTERS[ctx.config.solanaCluster].caip2,
             amount: String(ctx.config.maxRewardAtomic),
-            asset: ctx.config.usdcMint,
+            asset: ctx.config.paymentMint,
             payTo: MOCK_PROGRAM,
             resource: c.req.url,
             description: 'HTN mock vendor',

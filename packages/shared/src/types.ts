@@ -43,7 +43,7 @@ export interface QuestSubmission {
   error: string | null;
   /** The message read from the quest PDA, once the `state` step passed. */
   message: string | null;
-  /** USDC base units actually paid, once payment settled. */
+  /** Payment-token base units actually paid, once payment settled. */
   amountPaidAtomic: number | null;
   /** Settlement transaction signature, null while unpaid or simulated. */
   paymentSignature: string | null;
@@ -62,13 +62,18 @@ export interface QuestEnv {
   cluster: Cluster;
   /** CAIP-2 network id of the cluster. */
   network: string;
-  usdcMint: string;
-  /** The reward ceiling, in USDC base units. */
+  /** The SPL mint the agent pays in (USDC on mainnet, HTN Bucks on devnet). */
+  paymentMint: string;
+  /** Ticker for `paymentMint`, e.g. "HTN" or "USDC". */
+  paymentSymbol: string;
+  /** The reward ceiling, in `paymentMint` base units (six decimals). */
   maxRewardAtomic: number;
   /** The server agent's paying address, so hackers can pre-fund checks. Null when disabled. */
   payerAddress: string | null;
-  /** The `box` id of the Solana station, so the PWA can label it. */
+  /** The `box` id of the Solana box that hands out item 8, so the PWA can label it. */
   solanaBoxId: string;
+  /** The `box` id of the quest-gated Solana box that hands out item 9. */
+  solanaFinalBoxId: string;
 }
 
 /** Everything the one-page console renders for a badge. */

@@ -5,10 +5,10 @@
 		ALL_ITEMS,
 		BOXES,
 		QUEST_STEP_LABELS,
-		atomicToUsd,
 		boxName,
 		explorerAddressUrl,
 		explorerTxUrl,
+		formatAtomic,
 		isQuestReward,
 		isSolanaItem,
 		itemImagePath,
@@ -196,9 +196,12 @@
 							{#if award}
 								<span class="box">{boxName(award.box)}</span>
 							{:else if reward}
-								<span class="hint">finish the quest, then tap the Solana Booth</span>
+								<span class="hint">
+									{quest?.status === 'completed' ? 'tap' : 'finish the quest, then tap'}
+									{boxName(view.env.solanaFinalBoxId)}
+								</span>
 							{:else if solanaItem}
-								<span class="hint">tap the Solana Booth</span>
+								<span class="hint">tap {boxName(view.env.solanaBoxId)}</span>
 							{:else if awardingBox}
 								<span class="hint">tap {awardingBox.name}</span>
 							{/if}
@@ -241,7 +244,7 @@
 							<span class="number">[3]</span>
 							<p>
 								Run the starter x402 server: it sells <code>GET /quest</code> for ≤
-								{atomicToUsd(view.env.maxRewardAtomic)} USDC paid to YOUR address
+								{formatAtomic(view.env.maxRewardAtomic, view.env.paymentSymbol)} paid to YOUR address
 							</p>
 						</li>
 						<li>
@@ -256,9 +259,15 @@
 					<div class="facts">
 						<div><span>cluster</span><strong>{view.env.cluster}</strong></div>
 						<div><span>network</span><strong>{view.env.network}</strong></div>
-						<div><span>USDC mint</span><strong>{view.env.usdcMint}</strong></div>
+						<div><span>pay token</span><strong>{view.env.paymentSymbol}</strong></div>
 						<div>
-							<span>reward cap</span><strong>{atomicToUsd(view.env.maxRewardAtomic)} USDC</strong>
+							<span>mint</span>
+							<a href={explorerAddressUrl(view.env.paymentMint, view.env.cluster)}>
+								{view.env.paymentMint}
+							</a>
+						</div>
+						<div>
+							<span>reward cap</span><strong>{formatAtomic(view.env.maxRewardAtomic, view.env.paymentSymbol)}</strong>
 						</div>
 						<div>
 							<span>agent address</span>
@@ -348,10 +357,11 @@
 			{#if quest?.status === 'completed'}
 				<section class="block outcome success">
 					<p class="label paid">Quest complete · payout sent</p>
-					<p class="unlock">Quest complete. Tap the Solana Booth to collect item 9.</p>
+					<p class="unlock">
+						Quest complete. Tap {boxName(view.env.solanaFinalBoxId)} to collect item 9.
+					</p>
 					<p class="amount">
-						{quest.amountPaidAtomic === null ? '—' : atomicToUsd(quest.amountPaidAtomic)}
-						<span>USDC</span>
+						{quest.amountPaidAtomic === null ? '—' : formatAtomic(quest.amountPaidAtomic, view.env.paymentSymbol)}
 					</p>
 					{#if quest.paymentSignature}
 						<a class="signature" href={explorerTxUrl(quest.paymentSignature, view.env.cluster)}>
@@ -789,11 +799,6 @@
 		line-height: 1;
 		margin: 14px 0 8px;
 		color: var(--green);
-	}
-
-	.amount span {
-		font-size: 0.72rem;
-		letter-spacing: 0.1em;
 	}
 
 	.signature {

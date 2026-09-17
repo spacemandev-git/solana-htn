@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 import { CLUSTERS } from "../src/chain.ts";
-import { createApp } from "../src/server.ts";
+import { createApp, type AppDependencies } from "../src/server.ts";
 
 const WALLET = "11111111111111111111111111111111";
 const PROGRAM_ID = "9UkH8LeXw8jpQFZVNS3yk9LmkzsFAh54MK7SGP8jTsfY";
@@ -12,6 +12,8 @@ const ENV_KEYS = [
   "PROGRAM_ID",
   "PRICE_USD",
   "SOLANA_CLUSTER",
+  "PAYMENT_MINT",
+  "PAYMENT_SYMBOL",
   "SOLANA_RPC_URL",
   "FACILITATOR_URL",
   "PORT",
@@ -36,6 +38,45 @@ async function paymentChallenge(response: Response): Promise<Record<string, unkn
   return parsed;
 }
 
+function stubDependencies(): AppDependencies {
+  return {
+    facilitator: {
+      async verify() {
+        throw new Error("verify must not run for an unpaid request");
+      },
+      async settle() {
+        throw new Error("settle must not run for an unpaid request");
+      },
+      async getSupported() {
+        return {
+          kinds: [
+            {
+              x402Version: 2,
+              scheme: "exact",
+              network: DEVNET.caip2,
+              extra: { feePayer: WALLET },
+            },
+          ],
+          extensions: [],
+          signers: { [DEVNET.caip2]: [WALLET] },
+        };
+      },
+    },
+    readMessage: async () => "stubbed chain message",
+    schemeRpcUrl: false,
+  };
+}
+
+function restoreEnv(): void {
+  for (const [key, value] of originalEnv) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
 describe("hacker starter server", () => {
   let app: ReturnType<typeof createApp>["app"];
 
@@ -44,49 +85,18 @@ describe("hacker starter server", () => {
     process.env.PROGRAM_ID = PROGRAM_ID;
     process.env.PRICE_USD = "1.00";
     process.env.SOLANA_CLUSTER = "devnet";
+    delete process.env.PAYMENT_MINT;
+    delete process.env.PAYMENT_SYMBOL;
     process.env.SOLANA_RPC_URL = "https://rpc.invalid";
     process.env.FACILITATOR_URL = "https://facilitator.invalid";
     process.env.PORT = "4021";
 
-    ({ app } = createApp({
-      facilitator: {
-        async verify() {
-          throw new Error("verify must not run for an unpaid request");
-        },
-        async settle() {
-          throw new Error("settle must not run for an unpaid request");
-        },
-        async getSupported() {
-          return {
-            kinds: [
-              {
-                x402Version: 2,
-                scheme: "exact",
-                network: DEVNET.caip2,
-                extra: { feePayer: WALLET },
-              },
-            ],
-            extensions: [],
-            signers: { [DEVNET.caip2]: [WALLET] },
-          };
-        },
-      },
-      readMessage: async () => "stubbed chain message",
-      schemeRpcUrl: false,
-    }));
+    ({ app } = createApp(stubDependencies()));
   });
 
-  afterAll(() => {
-    for (const [key, value] of originalEnv) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  });
+  afterAll(restoreEnv);
 
-  test("GET /quest advertises an exact devnet USDC payment", async () => {
+  test("GET /quest advertises an exact devnet payment in the cluster's mint", async () => {
     const response = await app.request("/quest");
     expect(response.status).toBe(402);
 
@@ -105,7 +115,7 @@ describe("hacker starter server", () => {
       throw new Error("402 challenge has no exact devnet option");
     }
 
-    expect(option.asset).toBe(DEVNET.usdcMint);
+    expect(option.asset).toBe(DEVNET.paymentMint);
     expect(option.payTo).toBe(WALLET);
     const amount = option.amount;
     expect(typeof amount).toBe("string");
@@ -119,5 +129,43 @@ describe("hacker starter server", () => {
     const response = await app.request("/healthz");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, programId: PROGRAM_ID });
+  });
+});
+
+describe("payment mint override", () => {
+  afterAll(restoreEnv);
+
+  test("GET /quest advertises PAYMENT_MINT when configured", async () => {
+    const paymentMint = "So11111111111111111111111111111111111111112";
+    process.env.WALLET_ADDRESS = WALLET;
+    process.env.PROGRAM_ID = PROGRAM_ID;
+    process.env.PRICE_USD = "1.00";
+    process.env.SOLANA_CLUSTER = "devnet";
+    process.env.PAYMENT_MINT = paymentMint;
+    delete process.env.PAYMENT_SYMBOL;
+    process.env.SOLANA_RPC_URL = "https://rpc.invalid";
+    process.env.FACILITATOR_URL = "https://facilitator.invalid";
+    process.env.PORT = "4021";
+
+    const { app } = createApp(stubDependencies());
+    const response = await app.request("/quest");
+    expect(response.status).toBe(402);
+
+    const challenge = await paymentChallenge(response);
+    const accepts = challenge.accepts;
+    if (!Array.isArray(accepts)) {
+      throw new Error("402 challenge has no accepts array");
+    }
+    const option = accepts.find(
+      (candidate: unknown) =>
+        isRecord(candidate) &&
+        candidate.scheme === "exact" &&
+        candidate.network === DEVNET.caip2,
+    );
+    if (!isRecord(option)) {
+      throw new Error("402 challenge has no exact devnet option");
+    }
+
+    expect(option.asset).toBe(paymentMint);
   });
 });

@@ -9,7 +9,7 @@ const chain = await createQuestChain({
   cluster: config.solanaCluster,
   rpcUrl: config.solanaRpcUrl,
   payerSecretKey: config.x402PayerSecretKey,
-  usdcMint: config.usdcMint,
+  paymentMint: config.paymentMint,
   maxPaymentAtomic: config.maxRewardAtomic,
 });
 
