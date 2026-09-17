@@ -45,6 +45,27 @@ port name, or the balancer answers `503 no healthy upstream`.
 
 The blind-box relay POSTs to `https://api.solana-htn.com/api/box`.
 
+### The frontend serves absolute asset URLs
+
+`apps/pwa/svelte.config.js` pins `kit.paths.assets` to
+`https://solana-htn.com`, so the built HTML references every hashed script,
+stylesheet, and `static/` file at the apex rather than root-relative. A visitor
+who lands on `www.solana-htn.com` therefore fetches its JavaScript modules
+cross-origin, which needs the apex to answer those requests with
+`Access-Control-Allow-Origin`. Both hostnames hit the same `htn-pwa-serverless`
+backend, so this is a response-header concern on the load balancer, not a
+routing one — if the console renders blank HTML on `www.` with CORS errors in
+the console, that header is missing.
+
+`kit.paths.assets` and a service worker are mutually exclusive in SvelteKit, so
+there is no longer an offline app shell: the console still installs to the home
+screen from `manifest.webmanifest`, but it needs network on every load. A
+self-destructing worker is parked at `apps/pwa/static/service-worker.js` so
+phones that installed an earlier build unregister and drop their stale caches
+on the next update check; it can be deleted once the event is over. Re-adding
+`apps/pwa/src/service-worker.ts` will fail the build with "Cannot use service
+worker alongside config.kit.paths.assets".
+
 ## Prerequisites
 
 Install the Google Cloud CLI, log in, and confirm project access:

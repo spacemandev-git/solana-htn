@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --port 4173",
     "start": "node build/index.js",
-    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.worker.json && svelte-check --tsconfig ./tsconfig.json --threshold error --fail-on-warnings",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --threshold error --fail-on-warnings",
     "icons": "bun run scripts/gen-icons.ts"
   },
   "dependencies": {

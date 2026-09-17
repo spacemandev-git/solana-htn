@@ -6,7 +6,11 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		adapter: adapter(),
-		serviceWorker: { register: true },
+		// Absolute asset URLs so the built HTML points every hashed script and
+		// static file at the apex, even when served from www. Mutually exclusive
+		// with a service worker: adding back src/service-worker.ts fails the
+		// build ("Cannot use service worker alongside config.kit.paths.assets").
+		paths: { assets: 'https://solana-htn.com' },
 		version: { pollInterval: 0 }
 	},
 	compilerOptions: { runes: true }
