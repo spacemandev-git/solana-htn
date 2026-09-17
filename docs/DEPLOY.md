@@ -87,6 +87,19 @@ secret exists and bind its latest version to the API as
 `X402_PAYER_SECRET_KEY`. If the secret is absent, deployment continues with
 payments disabled.
 
+### RPC URL
+
+The RPC endpoint carries a provider API key (Helius devnet), so it is also a
+secret, `htn-solana-rpc-url`, bound as `SOLANA_RPC_URL` on both `htn-api` and
+`htn-sample`:
+
+```bash
+printf '%s' "https://devnet.helius-rpc.com/?api-key=<key>" | gcloud secrets create htn-solana-rpc-url --data-file=- --project solana-htn
+```
+
+When the secret is absent the services fall back to the public cluster RPC.
+Never put the keyed URL in `--set-env-vars`, docs, or commit messages.
+
 ## Commands
 
 ```bash
@@ -158,8 +171,9 @@ API (`htn-api`):
 | `SOLANA_FINAL_BOX_ID` | The final `box` id of the Solana station. |
 | `SOLANA_CLUSTER` | The selected Solana cluster (default `devnet`). |
 | `X402_PAYER_SECRET_KEY` | Latest version of the `htn-payer-key` Secret Manager secret, when present. |
+| `SOLANA_RPC_URL` | Latest version of the `htn-solana-rpc-url` secret, when present. |
 
-The reward cap and RPC URL override are not set by the script; add them with
+The reward cap is not set by the script; add it with
 `gcloud run services update htn-api --update-env-vars ...` (see `docs/API.md`
 → Configuration) when needed.
 
@@ -173,6 +187,7 @@ Sample endpoint (`htn-sample`):
 | `PROGRAM_ID` | `HTN_SAMPLE_PROGRAM_ID`, the deployed `htn_quest` program served by the sample. |
 | `SOLANA_CLUSTER` | `HTN_SOLANA_CLUSTER` (default `devnet`). |
 | `PRICE_USD` | `1.00`. |
+| `SOLANA_RPC_URL` | Latest version of the `htn-solana-rpc-url` secret, when present. |
 | `PORT` | Injected by Cloud Run (`8080`). |
 
 ## Resetting the live database

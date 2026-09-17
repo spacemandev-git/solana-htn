@@ -102,10 +102,16 @@ deployment of SBPFv0/v1/v2. The build script therefore:
 The deployable artifacts are:
 
 ```text
-program/target/deploy/htn_quest.so
+program/target/deploy/htn_quest.so                        # SBPFv3, for clusters with SBPFv3 enabled
+program/target/sbpf-solana-solana/release/htn_quest.so    # SBPFv0 from anchor build, for devnet
 program/target/deploy/htn_quest-keypair.json
 starter/idl/htn_quest.json
 ```
+
+Devnet had not activated SBPFv3 as of 2026-09-17 (feature
+`BUwGLeF3Lxyfv1J1wY8biFHBB2hrk2QhbNftQf3VV3cC`), so deploy the SBPFv0 file
+there; the v3 file fails with "sbpf_version required by the executable which
+are not enabled".
 
 The generated keypair's public key must match both `declare_id!` in the program
 and the `htn_quest` entry in `program/Anchor.toml`.

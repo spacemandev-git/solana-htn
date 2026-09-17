@@ -18,6 +18,7 @@ SOLANA_BOX_ID="${HTN_SOLANA_BOX_ID:-solana-booth}"
 SOLANA_FINAL_BOX_ID="${HTN_SOLANA_FINAL_BOX_ID:-solana-booth-final}"
 SOLANA_CLUSTER="${HTN_SOLANA_CLUSTER:-devnet}"
 PAYER_SECRET="htn-payer-key"                      # Secret Manager secret holding X402_PAYER_SECRET_KEY
+RPC_SECRET="htn-solana-rpc-url"                   # Secret Manager secret holding SOLANA_RPC_URL (keyed RPC)
 SAMPLE_WALLET="${HTN_SAMPLE_WALLET:-}"            # payTo of the sample endpoint
 SAMPLE_PROGRAM_ID="${HTN_SAMPLE_PROGRAM_ID:-}"    # deployed htn_quest program the sample serves
 # A dedicated runtime identity so the database bucket is not readable by every
@@ -210,18 +211,26 @@ grant_bucket_access() {
   echo "Granted $email object access to gs://$bucket"
 }
 
+secret_exists() {
+  gcloud secrets describe "$1" --project "$PROJECT" >/dev/null 2>&1
+}
+
 ensure_payer_secret_access() {
-  local email
+  local email secret
   email="$(runtime_sa_email)"
-  if gcloud secrets describe "$PAYER_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
-    gcloud secrets add-iam-policy-binding "$PAYER_SECRET" \
-      --member "serviceAccount:$email" \
-      --role roles/secretmanager.secretAccessor \
-      --project "$PROJECT" >/dev/null
-    echo "Granted $email access to secret $PAYER_SECRET"
-  else
-    echo "Payer key: secret $PAYER_SECRET not found; payments stay disabled until it is created"
-  fi
+  for secret in "$PAYER_SECRET" "$RPC_SECRET"; do
+    if secret_exists "$secret"; then
+      gcloud secrets add-iam-policy-binding "$secret" \
+        --member "serviceAccount:$email" \
+        --role roles/secretmanager.secretAccessor \
+        --project "$PROJECT" >/dev/null
+      echo "Granted $email access to secret $secret"
+    elif [ "$secret" = "$PAYER_SECRET" ]; then
+      echo "Payer key: secret $PAYER_SECRET not found; payments stay disabled until it is created"
+    else
+      echo "RPC: secret $RPC_SECRET not found; services use the public devnet RPC"
+    fi
+  done
 }
 
 enable_apis() {
@@ -293,14 +302,24 @@ deploy_platform() {
   env_vars="$env_vars,PWA_ORIGIN=$PWA_PUBLIC_URL,PUBLIC_APP_URL=$PWA_PUBLIC_URL,SOLANA_BOX_ID=$SOLANA_BOX_ID"
   env_vars="$env_vars,SOLANA_FINAL_BOX_ID=$SOLANA_FINAL_BOX_ID,SOLANA_CLUSTER=$SOLANA_CLUSTER"
 
-  local -a secret_args
-  if gcloud secrets describe "$PAYER_SECRET" --project "$PROJECT" >/dev/null 2>&1; then
-    secret_args=(--update-secrets "X402_PAYER_SECRET_KEY=$PAYER_SECRET:latest")
+  # Secrets are bound by name: the payer key enables live payments, the RPC
+  # URL carries a provider API key so it never lands in env vars or logs.
+  local secrets="" rpc_secret_args_csv=""
+  if secret_exists "$PAYER_SECRET"; then
+    secrets="X402_PAYER_SECRET_KEY=$PAYER_SECRET:latest"
     echo "Payer key: secret $PAYER_SECRET (payments live)"
   else
-    secret_args=(--clear-secrets)
     echo "Payer key: secret $PAYER_SECRET not found; deploying with payments disabled"
   fi
+  if secret_exists "$RPC_SECRET"; then
+    rpc_secret_args_csv="SOLANA_RPC_URL=$RPC_SECRET:latest"
+    secrets="${secrets:+$secrets,}$rpc_secret_args_csv"
+    echo "RPC: secret $RPC_SECRET"
+  fi
+  local -a secret_args=(--clear-secrets)
+  [ -n "$secrets" ] && secret_args=(--set-secrets "$secrets")
+  local -a sample_secret_args=(--clear-secrets)
+  [ -n "$rpc_secret_args_csv" ] && sample_secret_args=(--set-secrets "$rpc_secret_args_csv")
 
   local api_url
   api_url="$(gcloud run deploy "$API_SERVICE" \
@@ -342,6 +361,7 @@ deploy_platform() {
       --region "$REGION" --platform managed --allow-unauthenticated \
       --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --timeout=60 \
       --set-env-vars "NODE_ENV=production,WALLET_ADDRESS=$SAMPLE_WALLET,PROGRAM_ID=$SAMPLE_PROGRAM_ID,SOLANA_CLUSTER=$SOLANA_CLUSTER,PRICE_USD=1.00" \
+      "${sample_secret_args[@]}" \
       --service-account "$(runtime_sa_email)" \
       --project "$PROJECT" \
       --format='value(status.url)')"
@@ -354,6 +374,7 @@ deploy_platform() {
       --image "$sample_image" \
       --region "$REGION" --platform managed --allow-unauthenticated \
       --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --timeout=60 \
+      "${sample_secret_args[@]}" \
       --service-account "$(runtime_sa_email)" \
       --project "$PROJECT" \
       --format='value(status.url)')"

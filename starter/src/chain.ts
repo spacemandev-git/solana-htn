@@ -20,7 +20,7 @@ export interface ClusterInfo {
 export const CLUSTERS: Record<Cluster, ClusterInfo> = {
   devnet: {
     caip2: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-    paymentMint: "HTNBUCKS_MINT_PLACEHOLDER",
+    paymentMint: "3W7U7Dh81RdKBmwmF2nR3tz5YoaPFFUyBY1bz2u5tE1Q",
     paymentSymbol: "HTN",
     defaultRpcUrl: "https://api.devnet.solana.com",
     explorerSuffix: "?cluster=devnet",

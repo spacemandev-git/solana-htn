@@ -35,6 +35,13 @@ Do not substitute plain `anchor build`: its output is not deployable under the
 current Solana SBPFv3 requirement. The repository build script generates the
 IDL, rebuilds the program as SBPFv3, and checks the binary before you deploy it.
 
+> **Devnet has not activated SBPFv3** (feature `BUwGLeF3Lxyfv1J1wY8biFHBB2hrk2QhbNftQf3VV3cC`
+> was still inactive on 2026-09-17), so the v3 artifact is refused there with
+> "sbpf_version required by the executable which are not enabled". On devnet,
+> deploy the SBPFv0 binary that `anchor build` left at
+> `program/target/sbpf-solana-solana/release/htn_quest.so`. The same build run
+> produces both files.
+
 Your first build generates a fresh program keypair under
 `program/target/deploy/`, so your program ID is unique to you — but the
 `declare_id!` baked into the source still names the reference ID. Sync it to
@@ -49,7 +56,7 @@ bun run program:build
 Deploy the generated `.so` to devnet, paying with your wallet:
 
 ```bash
-solana program deploy program/target/deploy/htn_quest.so \
+solana program deploy program/target/sbpf-solana-solana/release/htn_quest.so \
   --program-id program/target/deploy/htn_quest-keypair.json \
   --keypair ~/.config/solana/id.json \
   --url devnet

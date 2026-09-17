@@ -78,7 +78,10 @@ bun run localnet        # validator + deploy, for local program hacking
 
 > `anchor build` on its own does **not** produce a deployable artifact — it
 > emits an SBPFv0 binary, and SIMD-0500 disables deployment of SBPFv0/v1/v2.
-> Always use `bun run program:build`. See [CLAUDE.md](CLAUDE.md#building-the-program).
+> Always use `bun run program:build`. Devnet is the exception: it has not
+> activated SBPFv3, so deploy the SBPFv0 file the same build leaves at
+> `program/target/sbpf-solana-solana/release/htn_quest.so`. See
+> [CLAUDE.md](CLAUDE.md#building-the-program).
 
 ## Configuration
 

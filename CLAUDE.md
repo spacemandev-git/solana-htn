@@ -207,6 +207,12 @@ and TypeScript types, then rebuilds the `.so` with
 `cargo-build-sbf --arch v3`, verifies `e_flags == 3`, and syncs the IDL into
 `packages/chain/src/idl/`.
 
+**Devnet is the exception:** it has not activated SBPFv3 (feature
+`BUwGLeF3Lxyfv1J1wY8biFHBB2hrk2QhbNftQf3VV3cC`, checked 2026-09-17), so the v3
+`.so` is refused there. Deploy the SBPFv0 binary `anchor build` leaves at
+`program/target/sbpf-solana-solana/release/htn_quest.so` to devnet. Keep the
+docs' devnet commands pointing at that path until the feature activates.
+
 ## Conventions
 
 - TypeScript is strict with `noUncheckedIndexedAccess`. Prefer narrowing over

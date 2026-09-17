@@ -65,7 +65,7 @@ export const CLUSTERS: Record<Cluster, ClusterInfo> = {
     caip2: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
     v1Network: 'solana-devnet',
     // HTN Bucks: SPL Token (not 2022), 6 decimals, minted by the agent wallet.
-    paymentMint: 'HTNBUCKS_MINT_PLACEHOLDER',
+    paymentMint: '3W7U7Dh81RdKBmwmF2nR3tz5YoaPFFUyBY1bz2u5tE1Q',
     paymentSymbol: 'HTN',
     explorerSuffix: '?cluster=devnet',
     defaultRpcUrl: 'https://api.devnet.solana.com',
