@@ -93,7 +93,23 @@ the same `new_item` and complete response without awarding anything new:
 | `fifth-floor` | Fifth Floor Hacking Space | `"6"` |
 | `seventh-floor` | Seventh Floor | `"7"` |
 
-The table is pinned in `packages/shared/src/items.ts`. A `box` id that is not
+Item ids map to the collectible characters below (`ITEM_LABELS` in
+`packages/shared/src/items.ts`; artwork ships with the PWA at
+`/items/<id>.png`):
+
+| Item | Character |
+| --- | --- |
+| `"1"` | Ginny Locked In |
+| `"2"` | Ginny Sparkle |
+| `"3"` | Patch Snooze |
+| `"4"` | Patch Sparkle |
+| `"5"` | Vinyl Curious |
+| `"6"` | Ginny Heart |
+| `"7"` | Patch Curious |
+| `"8"` | Vinyl Snooze |
+| `"9"` | Vinyl Sparkle |
+
+The box table is pinned in `packages/shared/src/items.ts`. A `box` id that is not
 in it returns `new_item: ""` (the badge shows "Empty box?") but still returns
 the pairing link and the current inventory.
 

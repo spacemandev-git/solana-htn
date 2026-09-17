@@ -11,6 +11,8 @@
 		explorerTxUrl,
 		isQuestReward,
 		isSolanaItem,
+		itemImagePath,
+		itemLabel,
 		type QuestSubmitRequest
 	} from '@htn/shared';
 	import { describeError, submitQuest } from '$lib/api.ts';
@@ -180,6 +182,16 @@
 								<strong>{item}</strong>
 								{#if reward}<span class="rewardtag">quest reward</span>{/if}
 							</div>
+							<img
+								class="art"
+								src={itemImagePath(item)}
+								alt={award ? itemLabel(item) : `Locked: ${itemLabel(item)}`}
+								width="512"
+								height="512"
+								loading="lazy"
+								decoding="async"
+							/>
+							<span class="name">{award ? itemLabel(item) : '???'}</span>
 							<span class="label state">{award ? 'owned' : 'locked'}</span>
 							{#if award}
 								<span class="box">{boxName(award.box)}</span>
@@ -524,6 +536,38 @@
 
 	.item.reward:not(.owned) {
 		border-color: color-mix(in srgb, var(--purple) 40%, var(--rule));
+	}
+
+	.art {
+		display: block;
+		width: 100%;
+		height: auto;
+		max-height: 132px;
+		object-fit: contain;
+		margin: 2px auto 0;
+		/* Locked items stay a mystery: a dark silhouette until the box is tapped. */
+		filter: brightness(0) saturate(0);
+		opacity: 0.55;
+		transition:
+			filter 400ms ease,
+			opacity 400ms ease;
+	}
+
+	.item.owned .art {
+		filter: none;
+		opacity: 1;
+	}
+
+	.name {
+		font-weight: 650;
+		font-size: 0.82rem;
+		letter-spacing: -0.01em;
+		line-height: 1.2;
+		color: var(--ink-mute);
+	}
+
+	.item.owned .name {
+		color: var(--ink);
 	}
 
 	.itemtop {

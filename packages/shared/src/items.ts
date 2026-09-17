@@ -52,6 +52,29 @@ export const SOLANA_ITEMS = [SOLANA_BOX_ITEM, QUEST_REWARD_ITEM] as const;
 /** Every item id, in display order "1" … "9". */
 export const ALL_ITEMS: readonly string[] = [...REGULAR_ITEMS, ...SOLANA_ITEMS];
 
+/** Display names of the collectible characters, keyed by item id. */
+export const ITEM_LABELS: Readonly<Record<string, string>> = {
+  '1': 'Ginny Locked In',
+  '2': 'Ginny Sparkle',
+  '3': 'Patch Snooze',
+  '4': 'Patch Sparkle',
+  '5': 'Vinyl Curious',
+  '6': 'Ginny Heart',
+  '7': 'Patch Curious',
+  '8': 'Vinyl Snooze',
+  '9': 'Vinyl Sparkle',
+};
+
+/** Display name for an item id, falling back to `Item <id>` for unknown ids. */
+export function itemLabel(item: string): string {
+  return ITEM_LABELS[item] ?? `Item ${item}`;
+}
+
+/** Path of the item's artwork under the PWA's static root (512px PNG). */
+export function itemImagePath(item: string): string {
+  return `/items/${item}.png`;
+}
+
 /**
  * Hard cap on the box response body, in bytes, including JSON syntax. The BLE
  * relay truncates anything longer and the badge shows "Reply was too long".
