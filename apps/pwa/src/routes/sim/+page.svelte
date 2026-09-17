@@ -2,6 +2,7 @@
 	import { BOXES, BOX_RESPONSE_MAX_BYTES, type BadgeSummary, type BoxResponse } from '@htn/shared';
 	import { describeError, devReset, getBadges, getHealth, tapBox, type Health } from '$lib/api.ts';
 	import { SimState } from '$lib/sim.svelte.ts';
+	import { onMount } from 'svelte';
 
 	const sim = new SimState();
 
@@ -14,8 +15,11 @@
 	let responseBytes = $state<number | null>(null);
 	let responseOk = $state(true);
 	let consoleCode = $state<string | null>(null);
+	let resetDialog = $state<HTMLDialogElement | null>(null);
 
-	$effect(() => {
+	// onMount runs untracked: hydrate() and refresh() write state this block would
+	// otherwise depend on, which made an $effect here loop until Svelte gave up.
+	onMount(() => {
 		sim.hydrate();
 		void refresh();
 		const timer = setInterval(() => void refresh(), 5000);
@@ -86,8 +90,8 @@
 		}
 	}
 
-	async function fireReset(): Promise<void> {
-		if (!confirm('Wipe all badges, awards, and quest submissions on the server?')) return;
+	async function confirmReset(): Promise<void> {
+		resetDialog?.close();
 		busy = 'reset';
 		try {
 			await devReset();
@@ -112,24 +116,43 @@
 	<section class="head">
 		<div>
 			<p class="label">Development tool</p>
-			<h1 class="h2">Blind-box tapper</h1>
+			<h1 class="h1">Blind-box tapper</h1>
 		</div>
 		<div class="headright">
-			<span class="pill" class:ok={health !== null} class:bad={serverError !== null}>
+			<span
+				class="pill"
+				class:pill-ok={health !== null && serverError === null}
+				class:pill-bad={serverError !== null}
+			>
 				<span class="dot"></span>
 				{serverError ? 'Server down' : health ? 'Server up' : 'Checking'}
 			</span>
 			{#if health}
-				<span class="pill" class:ok={health.chainEnabled}>
+				<span class="pill" class:pill-ok={health.chainEnabled}>
 					{health.cluster} · chain {health.chainEnabled ? 'on' : 'off'}
 				</span>
-				<span class="pill">{health.badgeCount} {health.badgeCount === 1 ? 'badge' : 'badges'}</span>
+				<span class="pill tnum">{health.badgeCount} {health.badgeCount === 1 ? 'badge' : 'badges'}</span>
 			{/if}
-			<button class="btn btn-danger btn-sm" type="button" onclick={fireReset} disabled={busy !== null}>
+			<button
+				class="btn btn-danger"
+				type="button"
+				onclick={() => resetDialog?.showModal()}
+				disabled={busy !== null}
+			>
 				{busy === 'reset' ? 'Resetting' : 'Reset server'}
 			</button>
 		</div>
 	</section>
+
+	<dialog class="dialog" bind:this={resetDialog} aria-labelledby="reset-dialog-title">
+		<p class="label">Destructive</p>
+		<h2 class="h3" id="reset-dialog-title">Reset the server?</h2>
+		<p class="body">This wipes all badges, awards, and quest submissions.</p>
+		<div class="dialog-actions">
+			<button class="btn btn-ghost" type="button" onclick={() => resetDialog?.close()}>Cancel</button>
+			<button class="btn btn-danger" type="button" onclick={confirmReset}>Reset server</button>
+		</div>
+	</dialog>
 
 	{#if serverError}
 		<p class="note note-error servernote">{serverError}</p>
@@ -137,9 +160,9 @@
 
 	<div class="cols">
 		<div class="col">
-			<section class="panel">
+			<section class="panel card">
 				<p class="label label-bright">$ tap --box</p>
-				<h2>Tap a box</h2>
+				<h2 class="h2">Tap a box</h2>
 
 				<label class="field">
 					<span class="label">Badge</span>
@@ -166,7 +189,7 @@
 				</label>
 
 				<button
-					class="btn btn-green btn-block tap"
+					class="btn btn-block tap"
 					type="button"
 					onclick={fireTap}
 					disabled={busy !== null || sim.badge === null}
@@ -175,11 +198,11 @@
 				</button>
 			</section>
 
-			<section class="panel">
+			<section class="panel card">
 				<div class="panelhead">
 					<p class="label">Raw response</p>
 					{#if responseBytes !== null}
-						<span class="bytes" class:over={responseBytes > BOX_RESPONSE_MAX_BYTES}>
+						<span class="bytes tnum" class:over={responseBytes > BOX_RESPONSE_MAX_BYTES}>
 							{responseBytes}/{BOX_RESPONSE_MAX_BYTES} UTF-8 bytes
 						</span>
 					{/if}
@@ -195,26 +218,31 @@
 						</a>
 					{/if}
 				{:else}
-					<p class="label hint">Tap a box to inspect its exact JSON payload.</p>
+					<p class="caption">Tap a box to inspect its exact JSON payload.</p>
 				{/if}
 			</section>
 		</div>
 
-		<section class="panel roster">
+		<section class="panel card roster">
 			<div class="panelhead">
 				<div>
-					<p class="label">All badges — {summaries.length}</p>
-					<p class="label hint">Refreshes every 5 seconds</p>
+					<p class="label tnum">All badges — {summaries.length}</p>
+					<p class="caption">Refreshes every 5 seconds</p>
 				</div>
-				<button class="linkbtn label" type="button" onclick={() => void refresh()} disabled={refreshing}>
+				<button class="btn-link" type="button" onclick={() => void refresh()} disabled={refreshing}>
 					{refreshing ? 'Refreshing' : 'Refresh'}
 				</button>
 			</div>
 
 			{#if summaries.length === 0}
-				<p class="label empty">
-					{serverError ? 'No data — the server is unreachable.' : 'No badges yet. Tap a box.'}
-				</p>
+				<div class="empty">
+					{#if serverError}
+						<p class="body">No data — the server is unreachable.</p>
+					{:else}
+						<p class="body">No badges yet.</p>
+						<p class="caption">Pick a badge and a box on the left, then tap it.</p>
+					{/if}
+				</div>
 			{:else}
 				<div class="tablewrap">
 					<table class="table">
@@ -230,12 +258,12 @@
 						<tbody>
 							{#each summaries as row (row.badge.badgeId)}
 								<tr>
-									<td class="mono">{row.badge.badgeId}</td>
+									<td class="mono tnum">{row.badge.badgeId}</td>
 									<td>{row.badge.name || '—'}</td>
 									<td class="mono items">{row.items.join(', ') || '—'}</td>
 									<td><span class="questchip {row.quest?.status ?? 'none'}">{row.quest?.status ?? '—'}</span></td>
 									<td class="rowaction">
-										<a class="btn btn-ghost btn-sm" href="/s/{encodeURIComponent(row.badge.pairingCode)}">
+										<a class="btn btn-ghost" href="/s/{encodeURIComponent(row.badge.pairingCode)}">
 											Open
 										</a>
 									</td>
@@ -252,91 +280,71 @@
 <style>
 	.wide {
 		max-width: 1180px;
-		padding-top: 28px;
+		padding-top: var(--sp-6);
 	}
 
 	.head {
 		display: flex;
 		align-items: flex-end;
 		justify-content: space-between;
-		gap: 16px;
+		gap: var(--sp-4);
 		flex-wrap: wrap;
-		padding-bottom: 18px;
+		padding-bottom: var(--sp-4);
 		border-bottom: 1px solid var(--rule);
 	}
 
 	.headright {
 		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: var(--sp-2);
 		flex-wrap: wrap;
 	}
 
-	.pill.ok {
-		color: var(--green);
-		border-color: color-mix(in srgb, var(--green) 40%, transparent);
-	}
-
-	.pill.bad {
-		color: var(--red);
-		border-color: color-mix(in srgb, var(--red) 45%, transparent);
-	}
-
 	.servernote {
-		margin-top: 16px;
+		margin-top: var(--sp-4);
 	}
 
 	.cols {
 		display: grid;
 		grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.5fr);
-		gap: 18px;
+		gap: var(--sp-4);
 		align-items: start;
-		margin-top: 18px;
+		margin-top: var(--sp-4);
 	}
 
 	.col {
 		display: grid;
-		gap: 18px;
+		gap: var(--sp-4);
 	}
 
 	.panel {
-		border: 1px solid var(--rule);
-		background: var(--bg-raise);
-		padding: 18px;
-		border-radius: 3px;
+		padding: var(--sp-4);
 	}
 
 	.panel h2 {
-		margin: 6px 0 18px;
-		font-size: 1.25rem;
+		margin: var(--sp-2) 0 var(--sp-4);
 	}
 
 	.panelhead {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 12px;
-		margin-bottom: 12px;
+		gap: var(--sp-3);
+		margin-bottom: var(--sp-3);
 	}
 
 	.field {
-		margin-top: 12px;
+		margin-top: var(--sp-3);
 	}
 
 	.field .label {
 		display: block;
-		margin-bottom: 5px;
+		margin-bottom: var(--sp-1);
 	}
 
 	.tap,
 	.open {
-		margin-top: 16px;
-	}
-
-	.hint {
-		margin-top: 7px;
-		letter-spacing: 0.08em;
-		text-transform: none;
+		margin-top: var(--sp-4);
 	}
 
 	.raw {
@@ -345,19 +353,19 @@
 		border: 1px solid var(--rule);
 		border-left: 2px solid var(--green);
 		background: var(--bg-sunken);
-		padding: 12px;
-		border-radius: 2px;
+		padding: var(--sp-3);
+		border-radius: var(--radius-sm);
 	}
 
 	.raw.bad {
 		border-left-color: var(--red);
-		color: #ffc9c9;
+		color: var(--ink);
 	}
 
 	.bytes {
 		font-family: var(--mono);
-		font-size: 0.62rem;
-		color: var(--green);
+		font-size: 0.75rem;
+		color: var(--ink-mute);
 		white-space: nowrap;
 	}
 
@@ -367,21 +375,7 @@
 	}
 
 	.sizewarn {
-		margin: 10px 0 0;
-	}
-
-	.linkbtn {
-		appearance: none;
-		border: 0;
-		background: transparent;
-		color: var(--purple);
-		cursor: pointer;
-		padding: 4px 0;
-	}
-
-	.linkbtn:disabled {
-		opacity: 0.45;
-		cursor: wait;
+		margin: var(--sp-3) 0 0;
 	}
 
 	.tablewrap {
@@ -391,12 +385,12 @@
 	.table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 0.76rem;
+		font-size: 0.8125rem;
 	}
 
 	.table th,
 	.table td {
-		padding: 11px 10px;
+		padding: var(--sp-3) var(--sp-2);
 		border-top: 1px solid var(--rule-soft);
 		text-align: left;
 		vertical-align: middle;
@@ -404,29 +398,28 @@
 
 	.table th {
 		font-family: var(--mono);
-		font-size: 0.58rem;
+		font-size: 0.75rem;
 		font-weight: 500;
-		letter-spacing: 0.14em;
 		text-transform: uppercase;
 		color: var(--ink-faint);
 	}
 
 	.table .mono {
-		font-size: 0.68rem;
+		font-size: 0.75rem;
 	}
 
 	.items {
-		color: var(--green);
+		color: var(--ink);
 	}
 
-	.rowaction {
-		text-align: right !important;
+	.table td.rowaction {
+		text-align: right;
 	}
 
 	.questchip {
 		display: inline-block;
 		font-family: var(--mono);
-		font-size: 0.6rem;
+		font-size: 0.75rem;
 		text-transform: uppercase;
 		color: var(--ink-faint);
 	}
@@ -444,8 +437,10 @@
 	}
 
 	.empty {
-		padding: 22px 0;
+		padding: var(--sp-6) 0;
 		text-align: center;
+		display: grid;
+		gap: var(--sp-1);
 	}
 
 	@media (max-width: 820px) {

@@ -41,7 +41,7 @@
 		width: 100%;
 		aspect-ratio: 1;
 		background: #f2efe6;
-		border-radius: 3px;
+		border-radius: var(--radius-sm);
 		padding: 0;
 		display: grid;
 		place-items: center;
@@ -60,7 +60,7 @@
 		border: 1px solid var(--rule);
 		color: var(--ink-faint);
 		font-family: var(--mono);
-		font-size: 0.7rem;
+		font-size: 0.75rem;
 	}
 
 	figcaption {

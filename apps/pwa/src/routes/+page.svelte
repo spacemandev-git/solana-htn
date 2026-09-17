@@ -39,9 +39,9 @@
 <main class="shell landing">
 	<section class="terminal card">
 		<div class="termbar">
-			<span class="dot red"></span>
-			<span class="dot amber"></span>
-			<span class="dot green"></span>
+			<span class="dot red" aria-hidden="true"></span>
+			<span class="dot amber" aria-hidden="true"></span>
+			<span class="dot green" aria-hidden="true"></span>
 			<span class="label">activation.sh</span>
 		</div>
 
@@ -66,16 +66,17 @@
 			</ol>
 
 			<section class="ai-card card">
-				<h2>AI at Solana scale.</h2>
-				<p>
+				<h2 class="h3">AI at Solana scale.</h2>
+				<p class="body">
 					The quest is built on the same stack the ecosystem uses: MCP servers, agent kits, and
 					agentic payments over x402.
 				</p>
 				<a
-					class="btn btn-primary"
+					class="btn btn-ghost"
 					href="https://solana.com/ai"
 					target="_blank"
-					rel="noopener">Explore AI on Solana ↗</a
+					rel="noopener"
+					aria-label="Explore AI on Solana (opens in a new tab)">Explore AI on Solana ↗</a
 				>
 			</section>
 
@@ -95,7 +96,7 @@
 			</form>
 
 			{#if dev}
-				<a class="simlink label" href="/sim">box simulator →</a>
+				<a class="simlink btn-link" href="/sim">box simulator →</a>
 			{/if}
 		</div>
 	</section>
@@ -103,31 +104,30 @@
 
 <style>
 	.landing {
-		min-height: calc(100dvh - 52px);
+		min-height: calc(100dvh - var(--bar-h));
 		display: grid;
 		align-items: center;
-		padding-top: 28px;
-		padding-bottom: 28px;
+		padding: var(--sp-6) 0;
 	}
 
 	.terminal {
 		max-width: 680px;
 		width: 100%;
 		margin: 0 auto;
-		background: var(--bg-sunken);
-		overflow: hidden;
+		background: var(--bg-raise);
+		overflow: clip;
 	}
 
 	.termbar {
 		display: flex;
 		align-items: center;
-		gap: 7px;
-		padding: 11px 14px;
+		gap: var(--sp-2);
+		padding: var(--sp-3) var(--sp-4);
 		border-bottom: 1px solid var(--rule);
 	}
 
 	.termbar .label {
-		margin-left: 7px;
+		margin-left: var(--sp-2);
 	}
 
 	.termbar .red {
@@ -143,19 +143,15 @@
 	}
 
 	.content {
-		padding: clamp(22px, 6vw, 42px);
+		padding: clamp(var(--sp-5), 5vw, var(--sp-7));
 	}
 
 	.display {
-		margin: 14px 0 18px;
+		margin: var(--sp-3) 0 var(--sp-4);
 	}
 
 	.display span {
-		background: var(--solana-gradient);
-		background-clip: text;
-		-webkit-background-clip: text;
-		color: transparent;
-		-webkit-text-fill-color: transparent;
+		color: var(--accent);
 	}
 
 	.lede {
@@ -164,22 +160,22 @@
 
 	.flow {
 		list-style: none;
-		padding: 20px 0;
-		margin: 24px 0;
+		padding: var(--sp-5) 0;
+		margin: var(--sp-5) 0;
 		border-top: 1px solid var(--rule);
 		border-bottom: 1px solid var(--rule);
 		display: grid;
-		gap: 13px;
+		gap: var(--sp-4);
 	}
 
 	.flow li {
 		display: grid;
-		grid-template-columns: 38px 1fr;
-		gap: 9px;
+		grid-template-columns: 44px 1fr;
+		gap: var(--sp-2);
 	}
 
 	.prompt {
-		color: var(--purple);
+		color: var(--accent);
 	}
 
 	.flow strong,
@@ -189,59 +185,39 @@
 
 	.flow strong {
 		font-family: var(--mono);
-		font-size: 0.78rem;
+		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--ink);
 	}
 
 	.flow li div span {
-		font-size: 0.82rem;
-		color: var(--ink-faint);
+		font-size: 0.8125rem;
+		color: var(--ink-mute);
 	}
 
 	.ai-card {
-		margin-bottom: 24px;
-		padding: 20px;
-		background: var(--bg-raise);
-	}
-
-	.ai-card h2 {
-		margin: 0;
-		font-size: 1.15rem;
-		letter-spacing: -0.025em;
+		margin-bottom: var(--sp-5);
+		padding: var(--sp-5);
+		background: var(--bg-sunken);
 	}
 
 	.ai-card p {
-		margin: 8px 0 16px;
-		color: var(--ink-mute);
-		font-size: 0.85rem;
-		line-height: 1.55;
+		margin: var(--sp-2) 0 var(--sp-4);
 	}
 
 	.jump {
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
-		gap: 8px;
+		gap: var(--sp-2);
 	}
 
 	.dollar {
-		color: var(--green);
-	}
-
-	.jump .input {
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
+		color: var(--ink-faint);
 	}
 
 	.simlink {
-		display: inline-block;
-		margin-top: 18px;
-		color: var(--purple);
-	}
-
-	.simlink:hover {
-		color: var(--green);
+		margin-top: var(--sp-4);
 	}
 
 	@media (max-width: 430px) {

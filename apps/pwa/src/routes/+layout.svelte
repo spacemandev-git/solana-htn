@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { dev } from '$app/environment';
+	import { assets } from '$app/paths';
 	import { page } from '$app/state';
 	import SolanaMark from '$lib/components/SolanaMark.svelte';
 	import type { Snippet } from 'svelte';
@@ -17,7 +18,10 @@
 		<div class="shell bar">
 			<a class="wordmark" href="/">
 				<SolanaMark size={18} />
-				<span>HACK <span class="thin">THE</span> NORTH <span class="x">×</span> SOLANA</span>
+				<span
+					><span class="long">HACK <span class="thin">THE</span> NORTH <span class="x">×</span> </span
+					>SOLANA</span
+				>
 			</a>
 			<nav>
 				<a class="navlink" href="https://solana.com/ai" target="_blank" rel="noopener">
@@ -36,7 +40,7 @@
 {#if !bare}
 	<footer class="footer">
 		<div class="shell foot">
-			<img src="/brand/solanaLogo.svg" alt="Solana" height="18" />
+			<img src="{assets}/brand/solanaLogo.svg" alt="Solana" height="18" />
 			<div class="footlinks">
 				<a href="https://solana.com/ai" target="_blank" rel="noopener">AI on Solana</a>
 				<a href="https://solana.com/brand" target="_blank" rel="noopener">Brand</a>
@@ -49,35 +53,27 @@
 	.topbar {
 		position: sticky;
 		top: 0;
-		z-index: 40;
-		background: color-mix(in srgb, var(--bg) 88%, transparent);
-		backdrop-filter: blur(12px);
+		z-index: var(--z-bar);
+		background: var(--bg);
+		border-bottom: 1px solid var(--rule);
 		padding-top: var(--safe-t);
-	}
-
-	.topbar::after {
-		content: '';
-		position: absolute;
-		inset: auto 0 0;
-		height: 1px;
-		background: var(--solana-gradient);
 	}
 
 	.bar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
-		height: 52px;
+		gap: var(--sp-4);
+		height: var(--bar-h);
 	}
 
 	.wordmark {
 		display: inline-flex;
 		align-items: center;
-		gap: 16px;
+		gap: var(--sp-3);
+		min-height: var(--tap);
 		font-family: var(--mono);
-		font-size: 0.63rem;
-		letter-spacing: 0.18em;
+		font-size: 0.8125rem;
 		text-transform: uppercase;
 		color: var(--ink);
 		white-space: nowrap;
@@ -93,47 +89,49 @@
 	}
 
 	.x {
-		color: var(--purple);
+		color: var(--accent);
+	}
+
+	.long {
+		margin-right: 0.45em;
 	}
 
 	nav {
 		display: flex;
-		gap: 4px;
+		gap: var(--sp-1);
 		justify-content: flex-end;
 	}
 
 	.navlink {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
 		font-family: var(--mono);
-		font-size: 0.62rem;
-		letter-spacing: 0.16em;
+		font-size: 0.8125rem;
 		text-transform: uppercase;
 		color: var(--ink-faint);
-		padding: 6px 8px;
-		border-radius: 2px;
-	}
-
-	.navlink:hover {
-		color: var(--ink);
+		padding: 0 var(--sp-2);
+		border-radius: var(--radius-sm);
 	}
 
 	.navlink.on {
 		color: var(--ink);
-		box-shadow: inset 0 -1px 0 var(--purple);
+		background: var(--bg-raise);
 	}
 
 	.footer {
 		border-top: 1px solid var(--rule);
-		margin-top: 64px;
-		padding-bottom: max(20px, var(--safe-b));
+		margin-top: var(--sp-8);
+		padding-bottom: max(var(--sp-5), var(--safe-b));
 	}
 
 	.foot {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px 20px;
+		gap: var(--sp-2) var(--sp-5);
 		align-items: center;
 		justify-content: space-between;
-		padding-top: 20px;
+		padding-top: var(--sp-5);
 	}
 
 	.foot > img {
@@ -143,32 +141,41 @@
 
 	.footlinks {
 		display: flex;
-		gap: 20px;
+		gap: var(--sp-5);
 		font-family: var(--mono);
-		font-size: 0.62rem;
-		letter-spacing: 0.16em;
-		text-transform: uppercase;
+		font-size: 0.8125rem;
 		color: var(--ink-mute);
 	}
 
-	.footlinks a:hover {
-		color: var(--green);
+	.footlinks a {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
+	}
+
+	@media (hover: hover) {
+		.navlink:hover,
+		.footlinks a:hover {
+			color: var(--ink);
+		}
 	}
 
 	@media (max-width: 520px) {
 		.bar {
-			gap: 8px;
+			gap: var(--sp-2);
 		}
 
 		.wordmark {
-			font-size: 0.5rem;
-			letter-spacing: 0.08em;
+			font-size: 0.75rem;
+		}
+
+		.long {
+			display: none;
 		}
 
 		.navlink {
-			font-size: 0.52rem;
-			letter-spacing: 0.08em;
-			padding-inline: 4px;
+			font-size: 0.75rem;
+			padding-inline: var(--sp-1);
 		}
 	}
 </style>

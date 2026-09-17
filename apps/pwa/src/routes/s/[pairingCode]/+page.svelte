@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { assets } from '$app/paths';
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
 	import {
@@ -137,39 +138,49 @@
 		<a class="mark" href="/">HTN <span class="x">×</span> SOLANA</a>
 		{#if view}
 			<div class="identity">
-				<span>{view.badge.name || view.badge.badgeId}</span>
-				<span class="label">{view.badge.pairingCode}</span>
+				<span class="truncate">{view.badge.name || view.badge.badgeId}</span>
+				<span class="label truncate">{view.badge.pairingCode}</span>
 			</div>
 		{/if}
 		<StatusPill {status} />
 	</header>
 
 	{#if !view}
-		<section class="center">
-			{#if status === 'unreachable'}
+		{#if status === 'unreachable'}
+			<section class="center">
 				<p class="label">Offline</p>
-				<h1 class="h2">Can't reach the server</h1>
+				<h1 class="h1">Can't reach the server</h1>
 				<p class="body">{live?.error}</p>
 				<button class="btn btn-ghost" onclick={() => live?.retry()}>Retry</button>
-			{:else if status === 'missing'}
+			</section>
+		{:else if status === 'missing'}
+			<section class="center">
 				<p class="label">Pairing {code}</p>
-				<h1 class="h2">No badge for this code</h1>
+				<h1 class="h1">No badge for this code</h1>
 				<p class="body">Tap a box with your badge first, then open the QR it shows.</p>
 				<a class="btn btn-ghost" href="/">Back</a>
-			{:else}
-				<div class="spinner" aria-hidden="true"></div>
+			</section>
+		{:else}
+			<section class="center" aria-busy="true" aria-label="Loading badge">
+				<div class="skeleton skeleton-label" aria-hidden="true"></div>
+				<div class="skeleton skeleton-heading" aria-hidden="true"></div>
+				<div class="skeleton-grid" aria-hidden="true">
+					{#each Array(9) as _}
+						<div class="skeleton skeleton-item"></div>
+					{/each}
+				</div>
 				<p class="label">Pairing {code}</p>
-			{/if}
-		</section>
+			</section>
+		{/if}
 	{:else}
 		<main class="quest">
 			<section class="block inventory">
 				<div class="sectionhead">
 					<div>
 						<p class="label label-bright">$ ls inventory/</p>
-						<h1 class="h2">Inventory</h1>
+						<h1 class="h1">Inventory</h1>
 					</div>
-					<span class="pill count">{view.awards.length}/9 collected</span>
+					<span class="pill pill-ok tnum">{view.awards.length}/9 collected</span>
 				</div>
 				<div class="itemgrid">
 					{#each ALL_ITEMS as item (item)}
@@ -179,12 +190,12 @@
 						{@const reward = isQuestReward(item)}
 						<article class="item" class:owned={award !== null} class:reward>
 							<div class="itemtop">
-								<strong>{item}</strong>
+								<strong class="tnum">{item}</strong>
 								{#if reward}<span class="rewardtag">quest reward</span>{/if}
 							</div>
 							<img
 								class="art"
-								src={itemImagePath(item)}
+								src="{assets}{itemImagePath(item)}"
 								alt={award ? itemLabel(item) : `Locked: ${itemLabel(item)}`}
 								width="512"
 								height="512"
@@ -214,10 +225,10 @@
 				<div class="sectionhead">
 					<div>
 						<p class="label label-bright">$ cat quest.txt</p>
-						<h1 class="h2">THE QUEST</h1>
+						<h1 class="h1">THE QUEST</h1>
 					</div>
 					{#if completed}
-						<button class="collapse label" onclick={() => (briefOpen = !briefOpen)}>
+						<button class="btn-link" onclick={() => (briefOpen = !briefOpen)}>
 							{briefOpen ? 'collapse' : 'expand'}
 						</button>
 					{/if}
@@ -285,7 +296,7 @@
 						</div>
 					</div>
 					{#if !view.env.chainEnabled}
-						<span class="pill simulated"><span class="dot"></span>payments simulated</span>
+						<span class="pill pill-warn simulated"><span class="dot"></span>payments simulated</span>
 					{/if}
 				{/if}
 			</section>
@@ -293,7 +304,7 @@
 			{#if quest?.status !== 'completed'}
 				<section class="block">
 					<p class="label label-bright">$ submit --verify</p>
-					<h2 class="sectiontitle">Submit your build</h2>
+					<h2 class="h2 sectiontitle">Submit your build</h2>
 					{#if quest?.paid}
 						<p class="note note-error">
 							The agent already paid this badge and cannot pay twice. The submitted proof can no
@@ -328,7 +339,7 @@
 						{#if formError}
 							<p class="note note-error" role="alert">{formError}</p>
 						{/if}
-						<button class="btn btn-green btn-block" type="submit" disabled={submissionLocked}>
+						<button class="btn btn-block" type="submit" disabled={submissionLocked}>
 							{posting ? 'Submitting…' : verifying ? 'Verifying…' : 'Run verification'}
 						</button>
 					</form>
@@ -338,7 +349,7 @@
 			{#if quest}
 				<section class="block">
 					<p class="label label-bright">$ tail -f verification.log</p>
-					<h2 class="sectiontitle">Verification log</h2>
+					<h2 class="h2 sectiontitle">Verification log</h2>
 					<div class="log" bind:this={logPanel} aria-live="polite">
 						{#if progressLog.length === 0 && !verifying}
 							<p class="muted">No live output retained. The latest result is shown below.</p>
@@ -360,7 +371,7 @@
 					<p class="unlock">
 						Quest complete. Tap {boxName(view.env.solanaFinalBoxId)} to collect item 9.
 					</p>
-					<p class="amount">
+					<p class="amount tnum">
 						{quest.amountPaidAtomic === null ? '—' : formatAtomic(quest.amountPaidAtomic, view.env.paymentSymbol)}
 					</p>
 					{#if quest.paymentSignature}
@@ -375,7 +386,7 @@
 			{:else if quest?.status === 'failed'}
 				<section class="block outcome failure">
 					<p class="label">Verification failed</p>
-					<h2>{quest.error ?? 'The proof did not pass verification.'}</h2>
+					<h2 class="h3">{quest.error ?? 'The proof did not pass verification.'}</h2>
 					{#if quest.step}
 						<p class="mono">failed at: {QUEST_STEP_LABELS[quest.step]}</p>
 					{/if}
@@ -392,60 +403,55 @@
 	.console {
 		min-height: 100dvh;
 		background: var(--bg);
-		padding-bottom: calc(34px + var(--safe-b));
+		padding-bottom: calc(var(--sp-6) + var(--safe-b));
 	}
 
 	.bar {
 		position: sticky;
 		top: 0;
-		z-index: 20;
+		z-index: var(--z-bar);
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		align-items: center;
-		gap: 12px;
-		padding: calc(9px + var(--safe-t)) max(14px, var(--safe-r)) 9px
-			max(14px, var(--safe-l));
-		background: color-mix(in srgb, var(--bg) 90%, transparent);
-		backdrop-filter: blur(12px);
-	}
-
-	.bar::after {
-		content: '';
-		position: absolute;
-		inset: auto 0 0;
-		height: 1px;
-		background: var(--solana-gradient);
+		gap: var(--sp-3);
+		min-height: var(--bar-h);
+		padding: calc(var(--sp-2) + var(--safe-t)) max(var(--sp-4), var(--safe-r)) var(--sp-2)
+			max(var(--sp-4), var(--safe-l));
+		background: var(--bg);
+		border-bottom: 1px solid var(--rule);
 	}
 
 	.mark {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35em;
+		min-height: var(--tap);
 		font-family: var(--mono);
-		font-size: 0.58rem;
-		letter-spacing: 0.16em;
+		font-size: 0.75rem;
 		color: var(--ink-mute);
 		white-space: nowrap;
 	}
 
 	.x {
-		color: var(--purple);
+		color: var(--accent);
+	}
+
+	/* The status pill always sits in the third column, even before the identity renders. */
+	.bar > :global(.pill) {
+		grid-column: 3;
+		justify-self: end;
 	}
 
 	.identity {
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
 		line-height: 1.25;
-		white-space: nowrap;
-		overflow: hidden;
-	}
-
-	.identity > span {
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.identity .label {
-		font-size: 0.54rem;
+		font-size: 0.75rem;
 	}
 
 	.center {
@@ -455,27 +461,35 @@
 		align-items: center;
 		justify-content: center;
 		text-align: center;
-		gap: 10px;
-		padding: 24px;
+		gap: var(--sp-3);
+		padding: var(--sp-5);
 	}
 
-	.center .body {
-		max-width: 32ch;
+	.center > * {
+		max-width: 36ch;
 	}
 
-	.spinner {
-		width: 26px;
-		height: 26px;
-		border: 1px solid var(--rule-strong);
-		border-top-color: var(--purple);
-		border-radius: 50%;
-		animation: spin 900ms linear infinite;
+	.skeleton-label {
+		width: 120px;
+		height: 14px;
 	}
 
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
+	.skeleton-heading {
+		width: 200px;
+		height: 28px;
+	}
+
+	.skeleton-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: var(--sp-2);
+		width: 100%;
+		max-width: 480px;
+	}
+
+	.skeleton-item {
+		aspect-ratio: 1;
+		border-radius: var(--radius-sm);
 	}
 
 	.quest {
@@ -485,7 +499,8 @@
 	}
 
 	.block {
-		padding: 26px max(16px, var(--safe-l)) 26px max(16px, var(--safe-r));
+		padding: var(--sp-6) max(var(--sp-4), var(--safe-l)) var(--sp-6)
+			max(var(--sp-4), var(--safe-r));
 		border-bottom: 1px solid var(--rule);
 	}
 
@@ -493,59 +508,40 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 14px;
+		gap: var(--sp-4);
 	}
 
-	.sectionhead .h2 {
-		margin-top: 7px;
-	}
-
-	.count {
-		color: var(--green);
-		border-color: color-mix(in srgb, var(--green) 40%, transparent);
+	.sectionhead .h1 {
+		margin-top: var(--sp-2);
 	}
 
 	.itemgrid {
 		display: grid;
 		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 8px;
-		margin-top: 20px;
+		gap: var(--sp-2);
+		margin-top: var(--sp-5);
 	}
 
 	.item {
 		position: relative;
-		z-index: 0;
 		min-height: 128px;
-		padding: 12px;
+		padding: var(--sp-3);
 		border: 1px solid var(--rule);
+		border-radius: var(--radius-sm);
 		background: var(--bg-sunken);
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-		opacity: 0.58;
-	}
-
-	.item.owned {
-		border-color: transparent;
-		background:
-			linear-gradient(145deg, var(--green-wash), var(--bg-sunken)) padding-box,
-			var(--solana-gradient) border-box;
+		gap: var(--sp-2);
 		opacity: 1;
 	}
 
-	.item.owned::before {
-		content: '';
-		position: absolute;
-		z-index: -1;
-		inset: -3px;
-		background: var(--solana-gradient);
-		filter: blur(12px);
-		opacity: 0.14;
-		pointer-events: none;
+	.item.owned {
+		border-color: var(--green);
+		background: var(--bg-raise);
 	}
 
 	.item.reward:not(.owned) {
-		border-color: color-mix(in srgb, var(--purple) 40%, var(--rule));
+		border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
 	}
 
 	.art {
@@ -554,13 +550,13 @@
 		height: auto;
 		max-height: 132px;
 		object-fit: contain;
-		margin: 2px auto 0;
+		margin: var(--sp-1) auto 0;
 		/* Locked items stay a mystery: a dark silhouette until the box is tapped. */
 		filter: brightness(0) saturate(0);
-		opacity: 0.55;
+		opacity: 0.5;
 		transition:
-			filter 400ms ease,
-			opacity 400ms ease;
+			filter var(--dur) var(--ease-out),
+			opacity var(--dur) var(--ease-out);
 	}
 
 	.item.owned .art {
@@ -570,8 +566,7 @@
 
 	.name {
 		font-weight: 650;
-		font-size: 0.82rem;
-		letter-spacing: -0.01em;
+		font-size: 0.875rem;
 		line-height: 1.2;
 		color: var(--ink-mute);
 	}
@@ -584,22 +579,21 @@
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 5px;
+		gap: var(--sp-1);
 	}
 
 	.itemtop strong {
 		font-family: var(--mono);
-		font-size: clamp(1.8rem, 8vw, 3rem);
+		font-size: clamp(1.5rem, 6vw, 2.25rem);
 		line-height: 1;
 	}
 
 	.rewardtag {
 		font-family: var(--mono);
-		font-size: 0.48rem;
+		font-size: 0.75rem;
 		line-height: 1.2;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--purple);
+		color: var(--accent);
 		text-align: right;
 	}
 
@@ -615,7 +609,7 @@
 	.hint {
 		margin-top: auto;
 		font-family: var(--mono);
-		font-size: 0.58rem;
+		font-size: 0.75rem;
 		line-height: 1.35;
 		color: var(--ink-faint);
 		word-break: break-word;
@@ -625,29 +619,20 @@
 		color: var(--ink-mute);
 	}
 
-	.collapse {
-		appearance: none;
-		border: 0;
-		background: transparent;
-		color: var(--purple);
-		cursor: pointer;
-		padding: 4px 0;
-	}
-
 	.steps {
 		list-style: none;
 		padding: 0;
-		margin: 24px 0;
+		margin: var(--sp-5) 0;
 		display: grid;
-		gap: 18px;
+		gap: var(--sp-4);
 	}
 
 	.steps li {
 		display: grid;
-		grid-template-columns: 34px minmax(0, 1fr);
-		gap: 8px;
+		grid-template-columns: 36px minmax(0, 1fr);
+		gap: var(--sp-2);
 		font-family: var(--mono);
-		font-size: 0.76rem;
+		font-size: 0.8125rem;
 		line-height: 1.55;
 	}
 
@@ -657,30 +642,36 @@
 		min-width: 0;
 	}
 
-	.steps a,
+	.steps a {
+		color: var(--accent);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+		word-break: break-word;
+	}
+
 	.steps code {
-		color: var(--green);
 		word-break: break-word;
 	}
 
 	.number {
-		color: var(--purple);
+		color: var(--accent);
 	}
 
 	.facts {
 		border: 1px solid var(--rule);
 		background: var(--bg-sunken);
-		padding: 12px;
+		padding: var(--sp-3);
+		border-radius: var(--radius-sm);
 		display: grid;
-		gap: 8px;
+		gap: var(--sp-2);
 		font-family: var(--mono);
-		font-size: 0.67rem;
+		font-size: 0.75rem;
 	}
 
 	.facts div {
 		display: grid;
-		grid-template-columns: 90px minmax(0, 1fr);
-		gap: 10px;
+		grid-template-columns: 104px minmax(0, 1fr);
+		gap: var(--sp-3);
 	}
 
 	.facts span {
@@ -694,48 +685,41 @@
 		word-break: break-all;
 	}
 
-	.facts a:hover {
-		color: var(--green);
+	.facts a {
+		color: var(--accent);
 	}
 
 	.simulated {
-		margin-top: 10px;
-		color: var(--amber);
-		border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+		margin-top: var(--sp-3);
 	}
 
 	.sectiontitle {
-		margin: 7px 0 18px;
-		font-size: 1.2rem;
-		letter-spacing: -0.03em;
+		margin: var(--sp-2) 0 var(--sp-4);
 	}
 
 	.form {
 		display: grid;
-		gap: 14px;
+		gap: var(--sp-4);
 	}
 
 	.prompt {
 		display: grid;
-		gap: 6px;
+		gap: var(--sp-2);
 		font-family: var(--mono);
-		font-size: 0.68rem;
-		color: var(--green);
-	}
-
-	.prompt .input {
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--ink-mute);
 	}
 
 	.log {
-		min-height: 116px;
+		min-height: 120px;
 		max-height: 300px;
 		overflow-y: auto;
 		border: 1px solid var(--rule);
 		background: var(--bg-deep);
-		padding: 13px;
+		padding: var(--sp-3);
+		border-radius: var(--radius-sm);
 		font-family: var(--mono);
-		font-size: 0.7rem;
+		font-size: 0.8125rem;
 		line-height: 1.55;
 		scroll-behavior: smooth;
 	}
@@ -766,7 +750,7 @@
 	}
 
 	.cursor {
-		color: var(--purple);
+		color: var(--accent);
 		animation: blink 850ms steps(1, end) infinite;
 	}
 
@@ -777,7 +761,8 @@
 	}
 
 	.outcome {
-		background: linear-gradient(180deg, var(--green-wash), transparent);
+		background: var(--green-wash);
+		border-left: 2px solid var(--green);
 	}
 
 	.outcome .paid {
@@ -785,39 +770,41 @@
 	}
 
 	.unlock {
-		margin: 12px 0 0;
+		margin: var(--sp-3) 0 0;
 		font-family: var(--mono);
-		font-size: 0.78rem;
+		font-size: 0.875rem;
 		color: var(--ink);
 	}
 
 	.amount {
 		font-family: var(--mono);
-		font-size: clamp(2.4rem, 14vw, 4.8rem);
+		font-size: clamp(2rem, 9vw, 3rem);
 		font-weight: 700;
-		letter-spacing: -0.07em;
 		line-height: 1;
-		margin: 14px 0 8px;
+		margin: var(--sp-4) 0 var(--sp-2);
 		color: var(--green);
 	}
 
 	.signature {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--tap);
 		font-family: var(--mono);
-		font-size: 0.68rem;
-		color: var(--purple);
+		font-size: 0.8125rem;
+		color: var(--accent);
 	}
 
 	blockquote {
-		margin: 32px 0 8px;
-		font-size: clamp(1.8rem, 9vw, 3.8rem);
-		font-weight: 700;
-		letter-spacing: -0.045em;
+		margin: var(--sp-6) 0 var(--sp-2);
+		font-size: clamp(1.5rem, 5vw, 2rem);
+		font-weight: 600;
 		line-height: 1.05;
 		word-break: break-word;
+		text-wrap: balance;
 	}
 
 	.failure {
-		background: linear-gradient(180deg, rgba(255, 92, 92, 0.08), transparent);
+		background: var(--red-wash);
 		border-left: 2px solid var(--red);
 	}
 
@@ -827,8 +814,15 @@
 	}
 
 	.failure h2 {
-		font-size: 1.15rem;
-		margin: 8px 0 12px;
+		margin: var(--sp-2) 0 var(--sp-3);
+	}
+
+	@media (hover: hover) {
+		.facts a:hover,
+		.signature:hover {
+			text-decoration: underline;
+			text-underline-offset: 3px;
+		}
 	}
 
 	@media (min-width: 600px) {
@@ -843,11 +837,7 @@
 	@media (max-width: 430px) {
 		.item {
 			min-height: 142px;
-			padding: 9px;
-		}
-
-		.rewardtag {
-			font-size: 0.42rem;
+			padding: var(--sp-2);
 		}
 	}
 </style>

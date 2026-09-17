@@ -1,7 +1,7 @@
 {
 	"name": "HTN x Solana Badges",
 	"short_name": "HTN Badges",
-	"description": "Sync your Hack the North badge at a station, earn funky on-chain gear for your animal, and claim it with a Solana wallet.",
+	"description": "Hack the North × Solana. Tap the blind boxes, collect all nine items, and finish the AI quest.",
 	"id": "/",
 	"start_url": "/",
 	"scope": "/",
@@ -17,7 +17,6 @@
 		{ "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
 	],
 	"shortcuts": [
-		{ "name": "Operator simulator", "short_name": "Simulator", "url": "/sim" },
-		{ "name": "Claim vault", "short_name": "Wallet", "url": "/wallet" }
+		{ "name": "Operator simulator", "short_name": "Simulator", "url": "/sim" }
 	]
 }
