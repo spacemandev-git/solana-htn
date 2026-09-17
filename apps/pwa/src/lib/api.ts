@@ -1,15 +1,12 @@
 import type {
 	BadgeSummary,
+	BadgeView,
+	BoxRequest,
+	BoxResponse,
 	Cluster,
-	DisconnectRequest,
 	QuestSubmission,
-	QuestSubmitRequest,
-	SessionView,
-	Station,
-	SyncRequest,
-	SyncResponse
+	QuestSubmitRequest
 } from '@htn/shared';
-import { API_KEY_HEADER } from '@htn/shared';
 
 /**
  * Base for API calls. Empty in dev — vite proxies /api to the server on :3000,
@@ -34,8 +31,9 @@ export class ApiFailure extends Error {
 	}
 }
 
-export const SERVER_DOWN_HINT =
-	'Could not reach the badge server. Start it with `bun run dev:server` (expected on http://localhost:3000).';
+export const SERVER_DOWN_HINT = import.meta.env.DEV
+	? 'Could not reach the badge server. Start it with `bun run dev:server` (expected on http://localhost:3000).'
+	: 'Could not reach the badge server. Check your connection and retry.';
 
 function url(path: string): string {
 	return `${API_BASE}${path}`;
@@ -68,8 +66,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 	if (!res.ok) {
 		const body = parsed as { error?: unknown; detail?: unknown } | null;
-		// A 5xx with no JSON body is the dev proxy (or a crashed server) telling us
-		// nothing is listening — that is an outage, not an application error.
 		const dead = res.status >= 500 && parsed === null;
 		if (dead) throw new ApiFailure(SERVER_DOWN_HINT, res.status, undefined, true);
 		const code = typeof body?.error === 'string' ? body.error : null;
@@ -81,16 +77,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	return parsed as T;
 }
 
-/** The server's `error` codes, in words a hacker standing in a hallway can act on. */
-const ERROR_COPY: Record<string, string> = {
-	unauthorized: 'The station API key was rejected.',
+/** The server's error codes, in words an attendee can act on. */
+export const ERROR_COPY: Record<string, string> = {
 	invalid_json: 'The server could not parse that request.',
 	invalid_request: 'The server rejected that request body.',
 	not_found: 'That endpoint does not exist on the server.',
-	session_not_found: 'No session for that pairing code.',
-	session_ended: 'This pairing session has ended. Sync the badge again for a fresh code.',
-	session_incomplete: 'That session is missing its badge or station record.',
-	badge_not_found: 'No badge with that id.',
+	badge_not_found: 'No badge with that pairing code. Tap a box with your badge first.',
 	quest_verifying: 'This quest is already being verified.',
 	quest_already_completed: 'This quest is already complete.',
 	quest_already_paid: 'The agent already paid this badge and cannot pay it twice.',
@@ -104,21 +96,14 @@ export function describeError(err: unknown): string {
 	return String(err);
 }
 
-/* ----------------------------- reads ----------------------------- */
-
-export function getSession(pairingCode: string): Promise<SessionView> {
-	return request<SessionView>(`/api/session/${encodeURIComponent(pairingCode)}`);
+export function getBadge(pairingCode: string): Promise<BadgeView> {
+	return request<BadgeView>(`/api/badge/${encodeURIComponent(pairingCode)}`);
 }
 
 export function getBadges(): Promise<BadgeSummary[]> {
 	return request<BadgeSummary[]>('/api/badges');
 }
 
-export function getStations(): Promise<Station[]> {
-	return request<Station[]>('/api/stations');
-}
-
-/** `GET /api/health` — liveness plus chain status. */
 export interface Health {
 	ok: boolean;
 	chainEnabled: boolean;
@@ -126,13 +111,12 @@ export interface Health {
 	payerAddress: string | null;
 	maxRewardAtomic: number;
 	badgeCount: number;
+	solanaBoxId: string;
 }
 
 export function getHealth(): Promise<Health> {
 	return request<Health>('/api/health');
 }
-
-/* ----------------------------- writes ----------------------------- */
 
 export function submitQuest(
 	body: QuestSubmitRequest
@@ -143,50 +127,18 @@ export function submitQuest(
 	});
 }
 
-/**
- * `/api/dev/sync` and `/api/dev/disconnect` are the same handlers without the
- * API key, mounted only when the server is not in production. The simulator
- * falls back to them so a demo can run before anyone finds the key.
- */
-export type StationRoute = 'station' | 'dev';
-
-export function stationSync(
-	apiKey: string,
-	body: SyncRequest,
-	route: StationRoute = 'station'
-): Promise<SyncResponse> {
-	return request<SyncResponse>(route === 'dev' ? '/api/dev/sync' : '/api/station/sync', {
+export function tapBox(body: BoxRequest): Promise<BoxResponse> {
+	return request<BoxResponse>('/api/box', {
 		method: 'POST',
-		headers: route === 'dev' ? {} : { [API_KEY_HEADER]: apiKey },
 		body: JSON.stringify(body)
 	});
 }
 
-export interface DisconnectResponse {
-	ended: boolean;
-	pairingCode: string | null;
-}
-
-export function stationDisconnect(
-	apiKey: string,
-	body: DisconnectRequest,
-	route: StationRoute = 'station'
-): Promise<DisconnectResponse> {
-	return request<DisconnectResponse>(
-		route === 'dev' ? '/api/dev/disconnect' : '/api/station/disconnect',
-		{
-			method: 'POST',
-			headers: route === 'dev' ? {} : { [API_KEY_HEADER]: apiKey },
-			body: JSON.stringify(body)
-		}
-	);
-}
-
-export function devReset(): Promise<unknown> {
-	return request<unknown>('/api/dev/reset', { method: 'POST' });
+export function devReset(): Promise<{ ok: true; reset: true }> {
+	return request<{ ok: true; reset: true }>('/api/dev/reset', { method: 'POST' });
 }
 
 /** URL of the SSE stream for a pairing code. */
 export function streamUrl(pairingCode: string): string {
-	return url(`/api/session/${encodeURIComponent(pairingCode)}/stream`);
+	return url(`/api/badge/${encodeURIComponent(pairingCode)}/stream`);
 }

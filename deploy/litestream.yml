@@ -1,0 +1,6 @@
+dbs:
+  - path: /tmp/htn.db
+    replicas:
+      - type: gcs
+        bucket: $LITESTREAM_BUCKET
+        path: htn.db

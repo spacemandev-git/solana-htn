@@ -4,9 +4,9 @@ export type LiveListener = (event: LiveEvent) => void;
 
 /**
  * In-process fan-out for SSE. One channel per pairing code; a hacker may have the
- * session open in more than one tab, so channels hold a set of listeners.
+ * badge view open in more than one tab, so channels hold a set of listeners.
  *
- * Deliberately not durable: a dropped connection re-fetches the full session view
+ * Deliberately not durable: a dropped connection re-fetches the full badge view
  * on reconnect, so there is nothing worth replaying.
  */
 export class LiveHub {
@@ -35,7 +35,7 @@ export class LiveHub {
       try {
         listener(event);
       } catch (error) {
-        // A wedged client must never break the sync request that triggered this.
+        // A wedged client must never break the box request that triggered this.
         console.error('[live] listener failed', error);
       }
     }

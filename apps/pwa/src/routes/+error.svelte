@@ -10,8 +10,7 @@
 	<p class="label">Error {page.status}</p>
 	<h1 class="h2">{page.error?.message ?? 'Something went sideways.'}</h1>
 	<p class="body">
-		If you were following a pairing link, walk back to a Sync Station and scan again for a fresh
-		code.
+		If you were following a pairing link, tap a box with your badge and open the QR it shows.
 	</p>
 	<a class="btn btn-ghost" href="/">Back to start</a>
 </main>

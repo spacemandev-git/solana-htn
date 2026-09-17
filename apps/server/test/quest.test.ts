@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { ApiError, LiveEvent, QuestStep, QuestSubmission, SyncResponse } from '@htn/shared';
+import type { ApiError, Badge, BadgeSummary, LiveEvent, QuestStep, QuestSubmission } from '@htn/shared';
 import {
+  boxBody,
   createHarness,
   json,
   questBody,
-  syncBody,
   TEST_MESSAGE,
   waitForQuest,
   type Harness,
@@ -20,8 +20,10 @@ afterEach(() => {
   h.close();
 });
 
-async function pair(badgeId: string): Promise<SyncResponse> {
-  return json<SyncResponse>(await h.sync(syncBody(badgeId, 'station-north')));
+async function pair(badgeId: string): Promise<Badge> {
+  await h.box(boxBody(badgeId, `regular-${badgeId}`));
+  const summaries = await json<BadgeSummary[]>(await h.request('/api/badges'));
+  return summaries.find((summary) => summary.badge.badgeId === badgeId)!.badge;
 }
 
 async function errorCode(response: Response): Promise<string> {
@@ -32,15 +34,7 @@ describe('quest submission credential and state rules', () => {
   test('rejects an unknown pairing code', async () => {
     const response = await h.post('/api/quest/submit', questBody('ZZZZZZ'));
     expect(response.status).toBe(404);
-    expect(await errorCode(response)).toBe('session_not_found');
-  });
-
-  test('rejects an ended session', async () => {
-    const synced = await pair('badge-ended');
-    await h.disconnect({ badgeId: 'badge-ended', stationId: 'station-north' });
-    const response = await h.post('/api/quest/submit', questBody(synced.pairingCode));
-    expect(response.status).toBe(409);
-    expect(await errorCode(response)).toBe('session_ended');
+    expect(await errorCode(response)).toBe('badge_not_found');
   });
 
   test('returns 202 immediately and rejects a concurrent verifying submission', async () => {

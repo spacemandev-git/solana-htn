@@ -1,30 +1,25 @@
 import { Hono } from 'hono';
 import type { LiveEvent } from '@htn/shared';
 import { fail } from '../http.ts';
+import { getBadgeByPairingCode } from '../services/badges.ts';
 import type { ServiceContext } from '../services/context.ts';
-import { buildSessionView, getSession } from '../services/sessions.ts';
+import { badgeViewByCode, buildBadgeView } from '../services/views.ts';
 
-/** Long enough to beat proxy idle timeouts, short enough to detect dead peers. */
 const HEARTBEAT_MS = 25_000;
 
-export function sessionRoutes(ctx: ServiceContext): Hono {
+export function badgeRoutes(ctx: ServiceContext): Hono {
   const routes = new Hono();
 
-  // Ended sessions are still readable so the PWA can render "you walked away".
   routes.get('/:pairingCode', (c) => {
-    const session = getSession(ctx.db, c.req.param('pairingCode'));
-    if (!session) return fail(c, 404, 'session_not_found', 'no session for that pairing code');
-
-    const view = buildSessionView(ctx, session);
-    if (!view) return fail(c, 404, 'session_incomplete', 'session is missing its badge or station');
-
+    const view = badgeViewByCode(ctx, c.req.param('pairingCode'));
+    if (!view) return fail(c, 404, 'badge_not_found', 'no badge with that pairing code');
     return c.json(view);
   });
 
   routes.get('/:pairingCode/stream', (c) => {
     const pairingCode = c.req.param('pairingCode');
-    const session = getSession(ctx.db, pairingCode);
-    if (!session) return fail(c, 404, 'session_not_found', 'no session for that pairing code');
+    const badge = getBadgeByPairingCode(ctx.db, pairingCode);
+    if (!badge) return fail(c, 404, 'badge_not_found', 'no badge with that pairing code');
 
     const encoder = new TextEncoder();
     let unsubscribe: () => void = () => {};
@@ -56,9 +51,7 @@ export function sessionRoutes(ctx: ServiceContext): Hono {
         };
 
         unsubscribe = ctx.live.subscribe(pairingCode, send);
-
-        const view = buildSessionView(ctx, session);
-        if (view) send({ type: 'state', view });
+        send({ type: 'state', view: buildBadgeView(ctx, badge) });
 
         heartbeat = setInterval(() => send({ type: 'ping' }), HEARTBEAT_MS);
         c.req.raw.signal.addEventListener('abort', cleanup, { once: true });
@@ -74,7 +67,6 @@ export function sessionRoutes(ctx: ServiceContext): Hono {
         'content-type': 'text/event-stream; charset=utf-8',
         'cache-control': 'no-cache, no-transform',
         connection: 'keep-alive',
-        // Stops nginx-style proxies from buffering the stream into uselessness.
         'x-accel-buffering': 'no',
       },
     });

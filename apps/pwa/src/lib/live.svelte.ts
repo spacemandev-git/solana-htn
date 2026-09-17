@@ -1,13 +1,7 @@
-import type { LiveEvent, QuestStep, SessionView } from '@htn/shared';
-import { ApiFailure, describeError, getSession, streamUrl } from './api.ts';
+import type { BadgeView, LiveEvent, QuestStep } from '@htn/shared';
+import { ApiFailure, describeError, getBadge, streamUrl } from './api.ts';
 
-export type LiveStatus =
-	| 'loading'
-	| 'live'
-	| 'reconnecting'
-	| 'wilderness'
-	| 'unreachable'
-	| 'missing';
+export type LiveStatus = 'loading' | 'live' | 'reconnecting' | 'unreachable' | 'missing';
 
 export interface ProgressEntry {
 	step: QuestStep;
@@ -16,11 +10,11 @@ export interface ProgressEntry {
 	at: number;
 }
 
-/** Loads a SessionView and keeps quest verification current over SSE. */
-export class LiveSession {
+/** Loads a BadgeView and keeps inventory and quest verification current over SSE. */
+export class LiveBadge {
 	readonly pairingCode: string;
 
-	view = $state<SessionView | null>(null);
+	view = $state<BadgeView | null>(null);
 	status = $state<LiveStatus>('loading');
 	error = $state<string | null>(null);
 	progressLog = $state<ProgressEntry[]>([]);
@@ -42,15 +36,16 @@ export class LiveSession {
 		this.status = 'loading';
 		this.error = null;
 		try {
-			const view = await getSession(this.pairingCode);
+			const view = await getBadge(this.pairingCode);
 			if (this.#stopped) return;
 			this.view = view;
-			this.status = view.session.active ? 'live' : 'wilderness';
+			this.status = 'live';
 			this.#open();
 		} catch (err) {
 			if (this.#stopped) return;
 			this.error = describeError(err);
-			this.status = err instanceof ApiFailure && err.offline ? 'unreachable' : 'missing';
+			this.status =
+				err instanceof ApiFailure && (err.offline || err.status >= 500) ? 'unreachable' : 'missing';
 		}
 	}
 
@@ -64,7 +59,7 @@ export class LiveSession {
 		this.progressLog = [];
 	}
 
-	/** Manual retry from the error state. */
+	/** Manual retry from an error state. */
 	retry(): void {
 		this.stop();
 		void this.start();
@@ -87,29 +82,21 @@ export class LiveSession {
 		};
 
 		source.onmessage = handle;
-		// Named events and unnamed events carry the same payload shape.
-		for (const name of ['state', 'quest-progress', 'quest-result', 'disconnected', 'ping'] as const) {
+		for (const name of ['state', 'quest-progress', 'quest-result', 'ping'] as const) {
 			source.addEventListener(name, handle as EventListener);
 		}
 
 		source.onopen = () => {
 			this.#failures = 0;
 			this.error = null;
-			if (this.status === 'reconnecting' || this.status === 'unreachable') {
-				this.status = this.view?.session.active === false ? 'wilderness' : 'live';
-			}
+			this.status = 'live';
 		};
 
 		source.onerror = () => {
 			if (this.#stopped) return;
 			this.#failures += 1;
-			// EventSource reconnects on its own; surface it only once we are sure.
-			if (this.status !== 'wilderness') {
-				this.status = this.#failures >= 3 ? 'unreachable' : 'reconnecting';
-			}
-			if (this.#failures >= 3 && !this.error) {
-				this.error = 'Lost the live stream. Retrying…';
-			}
+			this.status = this.#failures >= 3 ? 'unreachable' : 'reconnecting';
+			if (this.#failures >= 3 && !this.error) this.error = 'Lost the live stream. Retrying…';
 		};
 	}
 
@@ -117,7 +104,7 @@ export class LiveSession {
 		switch (event.type) {
 			case 'state':
 				this.view = event.view;
-				this.status = event.view.session.active ? 'live' : 'wilderness';
+				this.status = 'live';
 				this.error = null;
 				break;
 			case 'quest-progress':
@@ -136,20 +123,10 @@ export class LiveSession {
 				if (view) this.view = { ...view, quest: event.submission };
 				break;
 			}
-			case 'disconnected': {
-				this.status = 'wilderness';
-				const view = this.view;
-				if (view) {
-					this.view = {
-						...view,
-						session: { ...view.session, active: false, endedAt: event.at }
-					};
-				}
-				break;
-			}
 			case 'ping':
 				if (this.status === 'reconnecting' || this.status === 'unreachable') {
-					this.status = this.view?.session.active === false ? 'wilderness' : 'live';
+					this.status = 'live';
+					this.error = null;
 				}
 				break;
 		}

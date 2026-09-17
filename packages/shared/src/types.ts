@@ -1,31 +1,27 @@
 import type { Cluster, QuestStep } from './quest.ts';
 
-/** A hacker's badge. The `badgeId` is the id burned into the ESP32-C3. */
+/**
+ * A hacker's badge. `badgeId` is the HTN attendee id the relay sends as
+ * `user_id`, falling back to the wallet public key when that is empty.
+ */
 export interface Badge {
   badgeId: string;
   name: string;
   email: string;
-  createdAt: string;
-}
-
-/** A beacon: an ESP32 hub that badges announce themselves to over ESP-NOW. */
-export interface Station {
-  stationId: string;
-  name: string;
-  lastSeenAt: string | null;
-}
-
-/**
- * A live pairing between a badge and a beacon. Created when a beacon POSTs a
- * sync, ended when it POSTs a disconnect (hacker walked away).
- */
-export interface Session {
+  /** base58 ed25519 wallet burned into the badge. Empty when the badge sent none. */
+  publicKey: string;
+  /** The badge's permanent pairing code; the quest console lives at /s/<code>. */
   pairingCode: string;
+  createdAt: string;
+  lastSeenAt: string;
+}
+
+/** One item a badge has won, and the box that handed it out. */
+export interface Award {
   badgeId: string;
-  stationId: string;
-  startedAt: string;
-  endedAt: string | null;
-  active: boolean;
+  item: string;
+  box: string;
+  awardedAt: string;
 }
 
 export type QuestStatus = 'verifying' | 'completed' | 'failed';
@@ -71,13 +67,15 @@ export interface QuestEnv {
   maxRewardAtomic: number;
   /** The server agent's paying address, so hackers can pre-fund checks. Null when disabled. */
   payerAddress: string | null;
+  /** The `box` id of the Solana station, so the PWA can label it. */
+  solanaBoxId: string;
 }
 
-/** Everything the PWA renders for a paired hacker. */
-export interface SessionView {
-  session: Session;
+/** Everything the one-page console renders for a badge. */
+export interface BadgeView {
   badge: Badge;
-  station: Station;
+  /** Every item won so far, oldest first. */
+  awards: Award[];
   quest: QuestSubmission | null;
   env: QuestEnv;
 }
@@ -85,13 +83,14 @@ export interface SessionView {
 /** Aggregate row for the operator/simulator dashboard. */
 export interface BadgeSummary {
   badge: Badge;
-  activeSession: Session | null;
+  /** Item ids won so far, oldest first. */
+  items: string[];
   quest: QuestSubmission | null;
 }
 
 /** Server -> PWA push events over SSE. */
 export type LiveEvent =
-  | { type: 'state'; view: SessionView }
+  | { type: 'state'; view: BadgeView }
   | {
       type: 'quest-progress';
       badgeId: string;
@@ -100,5 +99,4 @@ export type LiveEvent =
       detail?: string;
     }
   | { type: 'quest-result'; submission: QuestSubmission }
-  | { type: 'disconnected'; at: string }
   | { type: 'ping' };

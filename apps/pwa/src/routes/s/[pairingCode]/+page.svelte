@@ -2,20 +2,23 @@
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
 	import {
+		ALL_ITEMS,
 		QUEST_STEP_LABELS,
 		atomicToUsd,
 		explorerAddressUrl,
 		explorerTxUrl,
+		isQuestReward,
+		isSolanaItem,
 		type QuestSubmitRequest
 	} from '@htn/shared';
 	import { describeError, submitQuest } from '$lib/api.ts';
 	import StatusPill from '$lib/components/StatusPill.svelte';
-	import { LiveSession } from '$lib/live.svelte.ts';
+	import { LiveBadge } from '$lib/live.svelte.ts';
 
 	const PROGRAM_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 	let code = $derived(page.params.pairingCode ?? '');
-	let live = $state<LiveSession | null>(null);
+	let live = $state<LiveBadge | null>(null);
 	let endpointUrl = $state('');
 	let programId = $state('');
 	let formError = $state<string | null>(null);
@@ -27,11 +30,11 @@
 	$effect(() => {
 		const pairingCode = code;
 		if (pairingCode.length === 0) return;
-		const session = new LiveSession(pairingCode);
-		live = session;
-		void session.start();
+		const badge = new LiveBadge(pairingCode);
+		live = badge;
+		void badge.start();
 		return () => {
-			session.stop();
+			badge.stop();
 			live = null;
 		};
 	});
@@ -43,6 +46,10 @@
 	let completed = $derived(quest?.status === 'completed');
 	let verifying = $derived(quest?.status === 'verifying');
 	let submissionLocked = $derived(posting || verifying || quest?.paid === true);
+
+	function awardFor(item: string) {
+		return view?.awards.find((award) => award.item === item) ?? null;
+	}
 
 	$effect(() => {
 		const submission = quest;
@@ -118,7 +125,7 @@
 </script>
 
 <svelte:head>
-	<title>{view ? `${view.badge.name} — The Quest` : 'Badge session'} · HTN × Solana</title>
+	<title>{view ? `${view.badge.name || view.badge.badgeId} — Badge Console` : 'Badge console'} · HTN × Solana</title>
 </svelte:head>
 
 <div class="console">
@@ -126,8 +133,8 @@
 		<a class="mark" href="/">HTN <span class="x">×</span> SOLANA</a>
 		{#if view}
 			<div class="identity">
-				<span>{view.badge.name}</span>
-				<span class="label">{view.station.name}</span>
+				<span>{view.badge.name || view.badge.badgeId}</span>
+				<span class="label">{view.badge.pairingCode}</span>
 			</div>
 		{/if}
 		<StatusPill {status} />
@@ -142,8 +149,8 @@
 				<button class="btn btn-ghost" onclick={() => live?.retry()}>Retry</button>
 			{:else if status === 'missing'}
 				<p class="label">Pairing {code}</p>
-				<h1 class="h2">No session for this code</h1>
-				<p class="body">Return to a station and sync the badge to get a fresh pairing code.</p>
+				<h1 class="h2">No badge for this code</h1>
+				<p class="body">Tap a box with your badge first, then open the QR it shows.</p>
 				<a class="btn btn-ghost" href="/">Back</a>
 			{:else}
 				<div class="spinner" aria-hidden="true"></div>
@@ -152,12 +159,36 @@
 		</section>
 	{:else}
 		<main class="quest">
-			{#if status !== 'live'}
-				<section class="note signal" role="status">
-					<strong>Station signal lost.</strong> Verification continues server-side. Keep this page
-					open and it will reconnect automatically.
-				</section>
-			{/if}
+			<section class="block inventory">
+				<div class="sectionhead">
+					<div>
+						<p class="label label-bright">$ ls inventory/</p>
+						<h1 class="h2">Inventory</h1>
+					</div>
+					<span class="pill count">{view.awards.length}/9 collected</span>
+				</div>
+				<div class="itemgrid">
+					{#each ALL_ITEMS as item (item)}
+						{@const award = awardFor(item)}
+						{@const solanaItem = isSolanaItem(item)}
+						{@const reward = isQuestReward(item)}
+						<article class="item" class:owned={award !== null} class:reward>
+							<div class="itemtop">
+								<strong>{item}</strong>
+								{#if reward}<span class="rewardtag">quest reward</span>{/if}
+							</div>
+							<span class="label state">{award ? 'owned' : 'locked'}</span>
+							{#if award}
+								<span class="box">{award.box}</span>
+							{:else if reward}
+								<span class="hint">finish the quest, then tap the Solana box</span>
+							{:else if solanaItem}
+								<span class="hint">tap the Solana box</span>
+							{/if}
+						</article>
+					{/each}
+				</div>
+			</section>
 
 			<section class="block brief">
 				<div class="sectionhead">
@@ -221,6 +252,10 @@
 							{:else}
 								<strong>—</strong>
 							{/if}
+						</div>
+						<div>
+							<span>ecosystem</span>
+							<a href="https://solana.com/ai" target="_blank" rel="noopener">AI on Solana ↗</a>
 						</div>
 					</div>
 					{#if !view.env.chainEnabled}
@@ -296,6 +331,7 @@
 			{#if quest?.status === 'completed'}
 				<section class="block outcome success">
 					<p class="label paid">Quest complete · payout sent</p>
+					<p class="unlock">Quest complete. Tap the Solana box to collect item 9.</p>
 					<p class="amount">
 						{quest.amountPaidAtomic === null ? '—' : atomicToUsd(quest.amountPaidAtomic)}
 						<span>USDC</span>
@@ -344,7 +380,14 @@
 			max(14px, var(--safe-l));
 		background: color-mix(in srgb, var(--bg) 90%, transparent);
 		backdrop-filter: blur(12px);
-		border-bottom: 1px solid var(--rule);
+	}
+
+	.bar::after {
+		content: '';
+		position: absolute;
+		inset: auto 0 0;
+		height: 1px;
+		background: var(--solana-gradient);
 	}
 
 	.mark {
@@ -414,12 +457,6 @@
 		margin: 0 auto;
 	}
 
-	.signal {
-		margin: 16px;
-		font-family: var(--mono);
-		font-size: 0.75rem;
-	}
-
 	.block {
 		padding: 26px max(16px, var(--safe-l)) 26px max(16px, var(--safe-r));
 		border-bottom: 1px solid var(--rule);
@@ -434,6 +471,99 @@
 
 	.sectionhead .h2 {
 		margin-top: 7px;
+	}
+
+	.count {
+		color: var(--green);
+		border-color: color-mix(in srgb, var(--green) 40%, transparent);
+	}
+
+	.itemgrid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 8px;
+		margin-top: 20px;
+	}
+
+	.item {
+		position: relative;
+		z-index: 0;
+		min-height: 128px;
+		padding: 12px;
+		border: 1px solid var(--rule);
+		background: var(--bg-sunken);
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		opacity: 0.58;
+	}
+
+	.item.owned {
+		border-color: transparent;
+		background:
+			linear-gradient(145deg, var(--green-wash), var(--bg-sunken)) padding-box,
+			var(--solana-gradient) border-box;
+		opacity: 1;
+	}
+
+	.item.owned::before {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		inset: -3px;
+		background: var(--solana-gradient);
+		filter: blur(12px);
+		opacity: 0.14;
+		pointer-events: none;
+	}
+
+	.item.reward:not(.owned) {
+		border-color: color-mix(in srgb, var(--purple) 40%, var(--rule));
+	}
+
+	.itemtop {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 5px;
+	}
+
+	.itemtop strong {
+		font-family: var(--mono);
+		font-size: clamp(1.8rem, 8vw, 3rem);
+		line-height: 1;
+	}
+
+	.rewardtag {
+		font-family: var(--mono);
+		font-size: 0.48rem;
+		line-height: 1.2;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--purple);
+		text-align: right;
+	}
+
+	.item .state {
+		color: var(--ink-mute);
+	}
+
+	.item.owned .state {
+		color: var(--green);
+	}
+
+	.box,
+	.hint {
+		margin-top: auto;
+		font-family: var(--mono);
+		font-size: 0.58rem;
+		line-height: 1.35;
+		color: var(--ink-faint);
+		word-break: break-word;
+	}
+
+	.box {
+		color: var(--ink-mute);
 	}
 
 	.collapse {
@@ -595,6 +725,13 @@
 		color: var(--green);
 	}
 
+	.unlock {
+		margin: 12px 0 0;
+		font-family: var(--mono);
+		font-size: 0.78rem;
+		color: var(--ink);
+	}
+
 	.amount {
 		font-family: var(--mono);
 		font-size: clamp(2.4rem, 14vw, 4.8rem);
@@ -646,6 +783,17 @@
 			border-right: 1px solid var(--rule);
 			max-width: 800px;
 			margin: 0 auto;
+		}
+	}
+
+	@media (max-width: 430px) {
+		.item {
+			min-height: 142px;
+			padding: 9px;
+		}
+
+		.rewardtag {
+			font-size: 0.42rem;
 		}
 	}
 </style>

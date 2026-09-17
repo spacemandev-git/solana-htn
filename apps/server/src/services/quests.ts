@@ -4,17 +4,18 @@ import {
   atomicToUsd,
   QUEST_STEPS,
   QuestProof,
+  type Badge,
   type QuestStep,
   type QuestSubmission,
   type QuestSubmitRequest,
-  type Session,
 } from '@htn/shared';
 import { one, run, toQuestSubmission } from '../db/index.ts';
 import type { QuestSubmissionRow } from '../db/schema.ts';
 import { HttpError } from '../http.ts';
+import { getBadgeByPairingCode } from './badges.ts';
 import type { ServiceContext } from './context.ts';
 import { nowIso } from './context.ts';
-import { buildSessionView, getSession } from './sessions.ts';
+import { buildBadgeView } from './views.ts';
 
 export function getQuestSubmission(db: Database, badgeId: string): QuestSubmission | null {
   const row = one<QuestSubmissionRow>(
@@ -42,15 +43,12 @@ export class QuestService {
   constructor(private readonly ctx: ServiceContext) {}
 
   submit(request: QuestSubmitRequest): QuestSubmission {
-    const session = getSession(this.ctx.db, request.pairingCode);
-    if (!session) {
-      throw new HttpError(404, 'session_not_found', 'no session for that pairing code');
-    }
-    if (!session.active) {
-      throw new HttpError(409, 'session_ended', 'the pairing session has ended');
+    const badge = getBadgeByPairingCode(this.ctx.db, request.pairingCode);
+    if (!badge) {
+      throw new HttpError(404, 'badge_not_found', 'no badge with that pairing code');
     }
 
-    const existing = getQuestSubmission(this.ctx.db, session.badgeId);
+    const existing = getQuestSubmission(this.ctx.db, badge.badgeId);
     if (existing?.status === 'completed') {
       throw new HttpError(409, 'quest_already_completed', 'this badge completed the quest');
     }
@@ -60,7 +58,7 @@ export class QuestService {
     if (existing?.paid) {
       throw new HttpError(409, 'quest_already_paid', 'this badge has already been paid');
     }
-    if (this.running.has(session.badgeId)) {
+    if (this.running.has(badge.badgeId)) {
       throw new HttpError(409, 'quest_verifying', 'this badge is already being verified');
     }
 
@@ -84,36 +82,36 @@ export class QuestService {
          paid = 0,
          submitted_at = excluded.submitted_at,
          completed_at = NULL`,
-      session.badgeId,
+      badge.badgeId,
       request.endpointUrl,
       request.programId,
       submittedAt,
     );
 
-    const submission = requireSubmission(this.ctx.db, session.badgeId);
-    this.start(session, submission);
+    const submission = requireSubmission(this.ctx.db, badge.badgeId);
+    this.start(badge, submission);
     return submission;
   }
 
-  private start(session: Session, submission: QuestSubmission): void {
+  private start(badge: Badge, submission: QuestSubmission): void {
     if (this.running.has(submission.badgeId)) {
       throw new Error(`quest verification for ${submission.badgeId} is already running`);
     }
     this.running.add(submission.badgeId);
 
-    void this.verify(session, submission)
-      .catch((error: unknown) => this.failInternal(session, submission.badgeId, error))
+    void this.verify(badge, submission)
+      .catch((error: unknown) => this.failInternal(badge, submission.badgeId, error))
       .finally(() => this.running.delete(submission.badgeId));
   }
 
   private progress(
-    session: Session,
+    badge: Badge,
     badgeId: string,
     step: QuestStep,
     status: 'running' | 'ok' | 'fail',
     detail?: string,
   ): void {
-    this.ctx.live.publish(session.pairingCode, {
+    this.ctx.live.publish(badge.pairingCode, {
       type: 'quest-progress',
       badgeId,
       step,
@@ -122,7 +120,7 @@ export class QuestService {
     });
   }
 
-  private beginStep(session: Session, badgeId: string, step: QuestStep): void {
+  private beginStep(badge: Badge, badgeId: string, step: QuestStep): void {
     run(
       this.ctx.db,
       `UPDATE quest_submissions SET step = ?
@@ -130,16 +128,18 @@ export class QuestService {
       step,
       badgeId,
     );
-    this.progress(session, badgeId, step, 'running');
+    this.progress(badge, badgeId, step, 'running');
   }
 
-  private publishResult(session: Session, submission: QuestSubmission): void {
-    this.ctx.live.publish(session.pairingCode, { type: 'quest-result', submission });
-    const view = buildSessionView(this.ctx, session);
-    if (view) this.ctx.live.publish(session.pairingCode, { type: 'state', view });
+  private publishResult(badge: Badge, submission: QuestSubmission): void {
+    this.ctx.live.publish(badge.pairingCode, { type: 'quest-result', submission });
+    this.ctx.live.publish(badge.pairingCode, {
+      type: 'state',
+      view: buildBadgeView(this.ctx, badge),
+    });
   }
 
-  private failStep(session: Session, step: QuestStep, detail: string): void {
+  private failStep(badge: Badge, step: QuestStep, detail: string): void {
     run(
       this.ctx.db,
       `UPDATE quest_submissions
@@ -147,14 +147,14 @@ export class QuestService {
         WHERE badge_id = ?`,
       step,
       detail,
-      session.badgeId,
+      badge.badgeId,
     );
-    const submission = requireSubmission(this.ctx.db, session.badgeId);
-    this.progress(session, session.badgeId, step, 'fail', detail);
-    this.publishResult(session, submission);
+    const submission = requireSubmission(this.ctx.db, badge.badgeId);
+    this.progress(badge, badge.badgeId, step, 'fail', detail);
+    this.publishResult(badge, submission);
   }
 
-  private failInternal(session: Session, badgeId: string, error: unknown): void {
+  private failInternal(badge: Badge, badgeId: string, error: unknown): void {
     console.error('[quest] verification failed unexpectedly', error);
     const current = getQuestSubmission(this.ctx.db, badgeId);
     if (!current || current.status !== 'verifying') return;
@@ -168,9 +168,9 @@ export class QuestService {
     );
     const submission = requireSubmission(this.ctx.db, badgeId);
     if (submission.step) {
-      this.progress(session, badgeId, submission.step, 'fail', 'internal_error');
+      this.progress(badge, badgeId, submission.step, 'fail', 'internal_error');
     }
-    this.publishResult(session, submission);
+    this.publishResult(badge, submission);
   }
 
   private persistPayment(badgeId: string, outcome: PaymentOutcome, paid: boolean): void {
@@ -187,25 +187,25 @@ export class QuestService {
     );
   }
 
-  private async verify(session: Session, submission: QuestSubmission): Promise<void> {
+  private async verify(badge: Badge, submission: QuestSubmission): Promise<void> {
     let message: string | null = null;
     let payment: PaymentOutcome | null = null;
 
     for (const step of QUEST_STEPS) {
-      this.beginStep(session, submission.badgeId, step);
+      this.beginStep(badge, submission.badgeId, step);
 
       if (step === 'program') {
         const result = await this.ctx.chain.checkProgram(submission.programId);
         if (!result.skipped && (!result.deployed || !result.executable)) {
           this.failStep(
-            session,
+            badge,
             step,
             result.error ??
               `program not found/executable on ${this.ctx.config.solanaCluster}`,
           );
           return;
         }
-        this.progress(session, submission.badgeId, step, 'ok');
+        this.progress(badge, submission.badgeId, step, 'ok');
         continue;
       }
 
@@ -213,7 +213,7 @@ export class QuestService {
         const result = await this.ctx.chain.readQuestMessage(submission.programId);
         if (!result.skipped && result.message === null) {
           this.failStep(
-            session,
+            badge,
             step,
             result.error ?? `quest message not found on ${this.ctx.config.solanaCluster}`,
           );
@@ -228,7 +228,7 @@ export class QuestService {
             submission.badgeId,
           );
         }
-        this.progress(session, submission.badgeId, step, 'ok');
+        this.progress(badge, submission.badgeId, step, 'ok');
         continue;
       }
 
@@ -236,14 +236,14 @@ export class QuestService {
         const result = await this.ctx.chain.probeChallenge(submission.endpointUrl);
         if (!result.ok || !result.requirement) {
           this.failStep(
-            session,
+            badge,
             step,
             result.error ?? 'endpoint returned no valid payment requirement',
           );
           return;
         }
         this.progress(
-          session,
+          badge,
           submission.badgeId,
           step,
           'ok',
@@ -254,7 +254,7 @@ export class QuestService {
 
       if (step === 'payment') {
         if (requireSubmission(this.ctx.db, submission.badgeId).paid) {
-          this.failStep(session, step, 'already paid');
+          this.failStep(badge, step, 'already paid');
           return;
         }
         payment = await this.ctx.chain.payEndpoint(submission.endpointUrl);
@@ -264,28 +264,28 @@ export class QuestService {
           } else if (payment.amountAtomic !== null || payment.network !== null) {
             this.persistPayment(submission.badgeId, payment, false);
           }
-          this.failStep(session, step, paymentFailure(payment));
+          this.failStep(badge, step, paymentFailure(payment));
           return;
         }
 
         // Settlement state lands before proof evaluation: this is the durable
         // pay-once boundary if the process exits between these two steps.
         this.persistPayment(submission.badgeId, payment, !payment.simulated);
-        this.progress(session, submission.badgeId, step, 'ok');
+        this.progress(badge, submission.badgeId, step, 'ok');
         continue;
       }
 
       if (!payment) throw new Error('proof step reached without a payment outcome');
       const proof = QuestProof.safeParse(payment.body);
       if (!proof.success) {
-        this.failStep(session, step, 'endpoint returned an invalid quest proof');
+        this.failStep(badge, step, 'endpoint returned an invalid quest proof');
         return;
       }
       if (message !== null && proof.data.message !== message) {
-        this.failStep(session, step, 'endpoint returned a different message than the chain');
+        this.failStep(badge, step, 'endpoint returned a different message than the chain');
         return;
       }
-      this.progress(session, submission.badgeId, step, 'ok');
+      this.progress(badge, submission.badgeId, step, 'ok');
     }
 
     run(
@@ -296,6 +296,6 @@ export class QuestService {
       nowIso(),
       submission.badgeId,
     );
-    this.publishResult(session, requireSubmission(this.ctx.db, submission.badgeId));
+    this.publishResult(badge, requireSubmission(this.ctx.db, submission.badgeId));
   }
 }

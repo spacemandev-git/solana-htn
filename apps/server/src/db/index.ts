@@ -2,20 +2,30 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Database } from 'bun:sqlite';
 import type { SQLQueryBindings } from 'bun:sqlite';
-import type { Badge, QuestStep, QuestSubmission, QuestStatus, Session, Station } from '@htn/shared';
+import type { Award, Badge, QuestStep, QuestSubmission, QuestStatus } from '@htn/shared';
 import {
   SCHEMA_SQL,
   TABLES_IN_DELETE_ORDER,
+  type AwardRow,
   type BadgeRow,
   type QuestSubmissionRow,
-  type SessionRow,
-  type StationRow,
 } from './schema.ts';
 
 export const MEMORY_DB = ':memory:';
 
+interface TableInfoRow {
+  name: string;
+}
+
 /** Applies the schema. Idempotent, so it runs on every boot and in every test. */
 export function migrate(db: Database): void {
+  // Legacy migration: the pre-blind-box schema had sessions and stations tables
+  // and a badges table without pairing codes. That data is disposable.
+  db.exec('DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS stations;');
+  const badgeColumns = db.query('PRAGMA table_info(badges)').all() as TableInfoRow[];
+  if (badgeColumns.length > 0 && !badgeColumns.some((column) => column.name === 'pairing_code')) {
+    db.exec('DROP TABLE IF EXISTS quest_submissions; DROP TABLE IF EXISTS badges;');
+  }
   db.exec(SCHEMA_SQL);
 }
 
@@ -25,7 +35,7 @@ export function openDatabase(path: string): Database {
   }
   const db = new Database(path, { create: true });
   if (path !== MEMORY_DB) {
-    // WAL keeps station syncs from blocking on PWA reads.
+    // WAL keeps box webhooks from blocking on PWA reads.
     db.exec('PRAGMA journal_mode = WAL;');
   }
   db.exec('PRAGMA busy_timeout = 5000;');
@@ -41,11 +51,6 @@ export function wipeDatabase(db: Database): void {
     }
   })();
 }
-
-/* ------------------------------------------------------------------ *
- * Thin typed query helpers. bun:sqlite returns `any`; these are the
- * only place that gets narrowed, so no route or service handles raw rows.
- * ------------------------------------------------------------------ */
 
 export function one<T>(db: Database, sql: string, ...params: SQLQueryBindings[]): T | null {
   return db.query(sql).get(...params) as T | null;
@@ -64,35 +69,24 @@ export function count(db: Database, sql: string, ...params: SQLQueryBindings[]):
   return row?.count ?? 0;
 }
 
-/* ------------------------------------------------------------------ *
- * Row -> API shape mappers.
- * ------------------------------------------------------------------ */
-
 export function toBadge(row: BadgeRow): Badge {
   return {
     badgeId: row.badge_id,
     name: row.name,
     email: row.email,
+    publicKey: row.public_key,
+    pairingCode: row.pairing_code,
     createdAt: row.created_at,
-  };
-}
-
-export function toStation(row: StationRow): Station {
-  return {
-    stationId: row.station_id,
-    name: row.name,
     lastSeenAt: row.last_seen_at,
   };
 }
 
-export function toSession(row: SessionRow): Session {
+export function toAward(row: AwardRow): Award {
   return {
-    pairingCode: row.pairing_code,
     badgeId: row.badge_id,
-    stationId: row.station_id,
-    startedAt: row.started_at,
-    endedAt: row.ended_at,
-    active: row.active === 1,
+    item: row.item,
+    box: row.box,
+    awardedAt: row.awarded_at,
   };
 }
 

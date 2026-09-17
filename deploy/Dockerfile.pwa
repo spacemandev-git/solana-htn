@@ -1,0 +1,43 @@
+FROM oven/bun:1-alpine AS manifests
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+COPY apps/server/package.json apps/server/package.json
+COPY apps/pwa/package.json apps/pwa/package.json
+COPY packages/chain/package.json packages/chain/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY starter/package.json starter/package.json
+
+FROM manifests AS dependencies
+RUN bun install --frozen-lockfile
+
+FROM dependencies AS builder
+
+ARG VITE_API_BASE
+ENV VITE_API_BASE=$VITE_API_BASE
+
+COPY . .
+RUN bun run --filter '@htn/pwa' build
+
+FROM node:22-alpine AS runtime
+
+WORKDIR /app
+
+# Keep the monorepo layout. Bun installs per-workspace rather than hoisting to a
+# single root node_modules -- zod, @sveltejs/* and the wallet-standard packages
+# all live in apps/pwa/node_modules, and only bs58 sits at the root. Node
+# resolves from the importing file upward, so the server bundle has to stay at
+# apps/pwa/build with its sibling node_modules intact or it fails at runtime
+# with "Cannot find package 'zod'".
+#
+# adapter-node also does NOT bundle its dependencies, and @sveltejs/kit is a
+# devDependency, so a --production install drops a package the built server
+# imports. Ship the tree the build actually resolved against.
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/pwa/node_modules ./apps/pwa/node_modules
+COPY --from=builder /app/apps/pwa/build ./apps/pwa/build
+COPY --from=builder /app/apps/pwa/package.json ./apps/pwa/package.json
+
+CMD ["node", "apps/pwa/build/index.js"]

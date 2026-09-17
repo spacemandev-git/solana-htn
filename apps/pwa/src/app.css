@@ -3,10 +3,10 @@
    ------------------------------------------------------------------ */
 :root {
 	/* Surface */
-	--bg: #0a0a0a;
+	--bg: #000000;
 	--bg-deep: #000000;
 	--bg-raise: #111111;
-	--bg-sunken: #060606;
+	--bg-sunken: #0a0a0a;
 
 	/* Ink */
 	--ink: #f2efe6;
@@ -14,11 +14,20 @@
 	--ink-faint: #6b6862;
 
 	/* Accents */
-	--purple: #9945ff;
+	--purple: #9945FF;
 	--purple-deep: #6d3f8f;
 	--purple-wash: rgba(153, 69, 255, 0.14);
-	--green: #14f195;
+	--green: #14F195;
 	--green-wash: rgba(20, 241, 149, 0.12);
+	--solana-gradient: linear-gradient(
+		45deg,
+		#9945FF 8%,
+		#8752F3 30%,
+		#5497D5 50%,
+		#43B4CA 60%,
+		#28E0B9 72%,
+		#19FB9B 97%
+	);
 	--amber: #ffb648;
 	--red: #ff5c5c;
 
@@ -190,6 +199,18 @@ a {
 
 .btn:hover:not(:disabled) {
 	background: #a95cff;
+}
+
+.btn-primary {
+	background: var(--solana-gradient);
+	color: #000000;
+	font-weight: 700;
+}
+
+.btn-primary:hover:not(:disabled) {
+	background: var(--solana-gradient);
+	color: #000000;
+	filter: brightness(1.08);
 }
 
 .btn:active:not(:disabled) {

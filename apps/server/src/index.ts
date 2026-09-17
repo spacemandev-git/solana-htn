@@ -18,7 +18,7 @@ const app = buildApp({ db, chain, config });
 const server = Bun.serve({
   port: config.port,
   fetch: app.fetch,
-  // SSE sessions stay open for the length of a hackathon; the 25s heartbeat is
+  // SSE streams stay open for the length of a hackathon; the 25s heartbeat is
   // the liveness check, not the socket timeout.
   idleTimeout: 0,
 });

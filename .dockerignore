@@ -1,0 +1,11 @@
+node_modules
+.git
+.svelte-kit
+build
+dist
+program/target
+apps/server/data
+.env*
+*.db
+*.db-*
+.solana-keys

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CLUSTERS } from '@htn/shared';
+import { CLUSTERS, DEFAULT_SOLANA_BOX_ID } from '@htn/shared';
 import { loadConfig } from '../src/config.ts';
 
 describe('quest configuration', () => {
@@ -10,6 +10,8 @@ describe('quest configuration', () => {
     expect(config.usdcMint).toBe(CLUSTERS.devnet.usdcMint);
     expect(config.solanaRpcUrl).toBeUndefined();
     expect(config.x402PayerSecretKey).toBeUndefined();
+    expect(config.solanaBoxId).toBe(DEFAULT_SOLANA_BOX_ID);
+    expect('stationApiKey' in config).toBe(false);
   });
 
   test('clamps finite rewards and falls back for non-finite input', () => {
@@ -24,5 +26,9 @@ describe('quest configuration', () => {
     expect(() => loadConfig({ SOLANA_CLUSTER: 'testnet' })).toThrow(
       'SOLANA_CLUSTER must be devnet or mainnet',
     );
+  });
+
+  test('accepts a custom Solana box id', () => {
+    expect(loadConfig({ SOLANA_BOX_ID: 'solana-final' }).solanaBoxId).toBe('solana-final');
   });
 });

@@ -1,146 +1,119 @@
 # HTTP API
 
-The server pairs hardware badges with browser sessions, verifies one quest
-submission per badge, and pays a valid x402 endpoint at most once. JSON fields
-use camelCase. Timestamps are ISO 8601 strings.
+The server receives blind-box taps, exposes each badge's authoritative state,
+and verifies one quest submission per badge while paying a valid x402 endpoint
+at most once. JSON fields use the casing shown below: firmware fields are
+snake_case and browser/dashboard fields are camelCase. Timestamps are ISO 8601
+strings.
 
-The examples below assume the server is available at `http://localhost:3000`.
+Examples use `http://localhost:3000` as the base URL. Production uses
+`https://api.solana-htn.com`.
+
+## Deployment
+
+The production API is the `htn-api` Cloud Run service in project `solana-htn`
+(region `northamerica-northeast2`), fronted by a global external HTTPS load
+balancer at `https://api.solana-htn.com`. Cloud Run domain mappings are not
+allowed in that region, so the hostname resolves to the load balancer's static
+IP rather than `ghs.googlehosted.com`. The relay POSTs to
+`https://api.solana-htn.com/api/box`.
 
 ## Authentication
 
-There are two credentials with separate jobs:
+The pairing code is the only credential. It is minted permanently for a badge,
+embedded in the pairing URL, and supplied to `POST /api/quest/submit`.
 
-- The station key is the hardware credential. Send it as
-  `X-Station-Key: <STATION_API_KEY>` to `/api/station/*`. It authenticates a
-  beacon, not a hacker.
-- The pairing code is the quest-submission credential. It is embedded in the
-  pairing URL and sent in `POST /api/quest/submit`. A code can submit only while
-  its session is active.
-
-Read-only session and dashboard endpoints are unauthenticated. Development
-endpoints are also unauthenticated, but they are not mounted in production.
+`POST /api/box` is deliberately unauthenticated because the hardware relay
+cannot set HTTP headers. Badge reads, SSE, dashboard, and health endpoints are
+also unauthenticated. Development endpoints are unauthenticated but are not
+mounted in production.
 
 Errors use this shape:
 
 ```json
 {
-  "error": "session_not_found",
-  "detail": "no session for that pairing code"
+  "error": "badge_not_found",
+  "detail": "no badge with that pairing code"
 }
 ```
 
 Malformed JSON returns `400 invalid_json`. JSON that does not match the shared
 schema returns `400 invalid_request`. Unknown routes return `404 not_found`.
 
-## Station endpoints
+## `POST /api/box`
 
-### `POST /api/station/sync`
-
-Requires `X-Station-Key`. A beacon calls this repeatedly while a badge is in
-range. Repeated calls for the same badge and station keep the same pairing
-code. A sync at a different station ends the badge's old active session and
-creates a new one.
-
-Request:
+The relay forwards the firmware payload verbatim. A successful request always
+returns HTTP 200 and should finish in under 8 seconds so the relay can deliver
+the response over BLE.
 
 ```http
-POST /api/station/sync
+POST /api/box
 Content-Type: application/json
-X-Station-Key: dev-station-key
 
 {
-  "stationId": "north-hall",
-  "stationName": "North Hall",
+  "box": "north-hall-03",
+  "user_id": "1042",
+  "name": "Ada Hacker",
+  "email": "ada@example.com",
+  "public_key": ""
+}
+```
+
+The firmware field names are fixed. `box` is printable ASCII, 1–39 characters.
+`user_id` is the badge identity; if it is empty, the server uses `public_key`
+instead. At least one must be non-empty. Empty `name`, `email`, or `public_key`
+values never erase previously recorded non-empty values.
+
+```json
+{
+  "new_item": "4",
+  "chain_link": "http://localhost:5173/s/7KQ9DW",
+  "all_items": ["4"]
+}
+```
+
+- `new_item` is the item won at this box.
+- `chain_link` is the permanent quest-console pairing link.
+- `all_items` is the authoritative inventory, oldest award first.
+
+The serialized response is at most 207 UTF-8 bytes. If necessary, the server
+sets `chain_link` to `""`; it never drops inventory items.
+
+A repeated `(box, badge)` tap replays the same `new_item` and complete response
+without awarding another item. A regular box selects uniformly from regular
+items the badge does not own. It returns `new_item: ""` when all seven regular
+items are already owned.
+
+The configured Solana box (default `blind-box-01`) hands out item `"8"` on the
+first tap like any other box. Item `"9"` is the quest reward: a tap after the
+badge's quest is `completed` awards it (`new_item: "9"`), and a badge that
+completed the quest before its first Solana tap receives `"8"` and `"9"`
+together with `new_item: "8"`. Any later tap replays the most recent item that
+box handed out. Thus an empty box means the regular pool is exhausted.
+
+## `GET /api/badge/:pairingCode`
+
+Returns the full browser view for the permanently paired badge:
+
+```json
+{
   "badge": {
-    "badgeId": "badge-1042",
-    "name": "Ada Hacker",
-    "email": "ada@example.com"
-  },
-  "rssi": -48
-}
-```
-
-`stationName` and `rssi` are optional. Response:
-
-```json
-{
-  "pairingCode": "7KQ9DW",
-  "url": "http://localhost:5173/s/7KQ9DW",
-  "badgeId": "badge-1042",
-  "questStatus": null
-}
-```
-
-`questStatus` is `null`, `verifying`, `completed`, or `failed`. Sync performs no
-chain operation and does not start verification.
-
-Errors:
-
-- `401 unauthorized`: missing or incorrect station key.
-- `400 invalid_json` or `400 invalid_request`: malformed request.
-
-### `POST /api/station/disconnect`
-
-Requires `X-Station-Key`. It ends the active session only when the submitted
-station is the station currently paired with that badge.
-
-```http
-POST /api/station/disconnect
-Content-Type: application/json
-X-Station-Key: dev-station-key
-
-{
-  "stationId": "north-hall",
-  "badgeId": "badge-1042"
-}
-```
-
-Matching session:
-
-```json
-{
-  "ended": true,
-  "pairingCode": "7KQ9DW"
-}
-```
-
-No matching active session:
-
-```json
-{
-  "ended": false,
-  "pairingCode": null
-}
-```
-
-## Session endpoints
-
-### `GET /api/session/:pairingCode`
-
-Returns the full browser view. Ended sessions remain readable so the client can
-show that the badge walked away.
-
-```json
-{
-  "session": {
-    "pairingCode": "7KQ9DW",
-    "badgeId": "badge-1042",
-    "stationId": "north-hall",
-    "startedAt": "2026-08-28T16:00:00.000Z",
-    "endedAt": null,
-    "active": true
-  },
-  "badge": {
-    "badgeId": "badge-1042",
+    "badgeId": "1042",
     "name": "Ada Hacker",
     "email": "ada@example.com",
-    "createdAt": "2026-08-28T16:00:00.000Z"
+    "publicKey": "",
+    "pairingCode": "7KQ9DW",
+    "createdAt": "2026-08-28T16:00:00.000Z",
+    "lastSeenAt": "2026-08-28T16:04:00.000Z"
   },
-  "station": {
-    "stationId": "north-hall",
-    "name": "North Hall",
-    "lastSeenAt": "2026-08-28T16:00:04.000Z"
-  },
+  "awards": [
+    {
+      "badgeId": "1042",
+      "item": "4",
+      "box": "north-hall-03",
+      "awardedAt": "2026-08-28T16:00:00.000Z"
+    }
+  ],
   "quest": null,
   "env": {
     "chainEnabled": true,
@@ -148,44 +121,36 @@ show that the badge walked away.
     "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
     "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
     "maxRewardAtomic": 1000000,
-    "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111"
+    "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
+    "solanaBoxId": "blind-box-01"
   }
 }
 ```
 
 `chainEnabled` is false and `payerAddress` is null when no payer key is
-configured. In that mode the chain client can simulate payment for the local
-mock endpoint.
+configured. An unknown code returns `404 badge_not_found`.
 
-Errors:
-
-- `404 session_not_found`: unknown pairing code.
-- `404 session_incomplete`: a referenced badge or station row is missing.
-
-### `GET /api/session/:pairingCode/stream`
+## `GET /api/badge/:pairingCode/stream`
 
 Opens a Server-Sent Events stream with content type `text/event-stream`. The
-first event is the current `state` when the session is complete enough to build
-a view. The server sends `ping` every 25 seconds. Reconnect by opening a new
-stream; events are not replayed because the initial state is authoritative.
+first event is the authoritative `state`. The server sends `ping` every 25
+seconds. Reconnect by opening a new stream; events are not replayed because the
+initial state contains the current truth.
 
-Every frame uses the standard SSE data form:
+Every frame uses standard SSE data framing:
 
 ```text
 data: {"type":"ping"}
 
 ```
 
-The endpoint returns `404 session_not_found` for an unknown code.
+An unknown code returns `404 badge_not_found`.
 
-## Quest endpoint
+## `POST /api/quest/submit`
 
-### `POST /api/quest/submit`
-
-The pairing code is the credential. The referenced session must exist and
-still be active. The server persists the submission and returns `202` before
-verification finishes; watch the session stream or fetch the session again for
-the result.
+The pairing code is the credential. It must belong to a badge. The server
+persists the submission and returns `202` before verification finishes; watch
+the badge stream or fetch the badge again for the result.
 
 ```http
 POST /api/quest/submit
@@ -198,12 +163,10 @@ Content-Type: application/json
 }
 ```
 
-Response:
-
 ```json
 {
   "submission": {
-    "badgeId": "badge-1042",
+    "badgeId": "1042",
     "endpointUrl": "https://hacker.example/quest",
     "programId": "11111111111111111111111111111111",
     "status": "verifying",
@@ -222,8 +185,7 @@ Response:
 
 Submission errors:
 
-- `404 session_not_found`: no session has that pairing code.
-- `409 session_ended`: the code belongs to an ended session.
+- `404 badge_not_found`: no badge has that pairing code.
 - `409 quest_verifying`: verification is already running for the badge.
 - `409 quest_already_completed`: the badge already completed the quest.
 - `409 quest_already_paid`: an earlier failed run moved money and cannot be
@@ -270,72 +232,27 @@ A completed submission has `step: null`, `error: null`, and a non-null
 `completedAt`. A failed submission records the failing `step`, a human-readable
 `error`, and `completedAt: null`.
 
-## Dashboard and monitoring
+## Dashboard
 
 ### `GET /api/badges`
 
-Returns one summary per badge:
+Returns one summary per badge. `items` contains award ids oldest first and
+`quest` may be null.
 
 ```json
 [
   {
     "badge": {
-      "badgeId": "badge-1042",
+      "badgeId": "1042",
       "name": "Ada Hacker",
       "email": "ada@example.com",
-      "createdAt": "2026-08-28T16:00:00.000Z"
-    },
-    "activeSession": {
+      "publicKey": "",
       "pairingCode": "7KQ9DW",
-      "badgeId": "badge-1042",
-      "stationId": "north-hall",
-      "startedAt": "2026-08-28T16:00:00.000Z",
-      "endedAt": null,
-      "active": true
+      "createdAt": "2026-08-28T16:00:00.000Z",
+      "lastSeenAt": "2026-08-28T16:04:00.000Z"
     },
+    "items": ["4", "2"],
     "quest": null
-  }
-]
-```
-
-`activeSession` and `quest` may each be null.
-
-### `GET /api/badges/:badgeId`
-
-Returns the badge, all of its sessions newest first, and its current quest:
-
-```json
-{
-  "badge": {
-    "badgeId": "badge-1042",
-    "name": "Ada Hacker",
-    "email": "ada@example.com",
-    "createdAt": "2026-08-28T16:00:00.000Z"
-  },
-  "sessions": [
-    {
-      "pairingCode": "7KQ9DW",
-      "badgeId": "badge-1042",
-      "stationId": "north-hall",
-      "startedAt": "2026-08-28T16:00:00.000Z",
-      "endedAt": null,
-      "active": true
-    }
-  ],
-  "quest": null
-}
-```
-
-An unknown id returns `404 badge_not_found`.
-
-### `GET /api/stations`
-
-```json
-[
-  {
-    "stationId": "north-hall",
-    "name": "North Hall",
-    "lastSeenAt": "2026-08-28T16:00:04.000Z"
   }
 ]
 ```
@@ -349,35 +266,35 @@ An unknown id returns `404 badge_not_found`.
   "cluster": "devnet",
   "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
   "maxRewardAtomic": 1000000,
-  "badgeCount": 42
+  "badgeCount": 42,
+  "solanaBoxId": "blind-box-01"
 }
 ```
 
-This endpoint does not perform an RPC health check. It reports the configured
-chain-client mode and current local badge count.
+This does not perform an RPC health check. It reports configured chain-client
+mode and the current local badge count.
 
 ## SSE event catalogue
 
 ### `state`
 
-The authoritative session snapshot. It is sent when a stream opens, after a
-sync or disconnect changes session state, and after a quest result.
+The authoritative badge snapshot. It is the first stream event, is published
+after every box tap, and follows every quest result.
 
 ```json
 {
   "type": "state",
   "view": {
-    "session": {},
     "badge": {},
-    "station": {},
+    "awards": [],
     "quest": null,
     "env": {}
   }
 }
 ```
 
-The abbreviated objects above have the full shapes documented under
-`GET /api/session/:pairingCode`.
+The abbreviated objects have the full shapes documented under
+`GET /api/badge/:pairingCode`.
 
 ### `quest-progress`
 
@@ -388,7 +305,7 @@ Sent before and after each pipeline step. `status` is `running`, `ok`, or
 ```json
 {
   "type": "quest-progress",
-  "badgeId": "badge-1042",
+  "badgeId": "1042",
   "step": "challenge",
   "status": "ok",
   "detail": "$1.00 to 11111111111111111111111111111111"
@@ -398,31 +315,17 @@ Sent before and after each pipeline step. `status` is `running`, `ok`, or
 ### `quest-result`
 
 Sent after the database row reaches `completed` or `failed`, immediately before
-the refreshed `state` event.
+the refreshed `state` event. `submission` has the full submit-response shape.
 
 ```json
 {
   "type": "quest-result",
   "submission": {
-    "badgeId": "badge-1042",
+    "badgeId": "1042",
     "status": "completed",
     "step": null,
     "error": null
   }
-}
-```
-
-The `submission` object includes every field shown in the submit response.
-
-### `disconnected`
-
-Sent when a station reports the badge gone or a new station supersedes the old
-session.
-
-```json
-{
-  "type": "disconnected",
-  "at": "2026-08-28T16:10:00.000Z"
 }
 ```
 
@@ -440,24 +343,18 @@ These routes exist only when `NODE_ENV !== production`.
 
 ### `POST /api/dev/reset`
 
-Deletes all local quest, session, badge, and station rows and clears live-event
-listeners.
+Deletes all local quest, award, and badge rows and clears live-event listeners.
 
 ```json
 { "ok": true, "reset": true }
 ```
 
-### `POST /api/dev/sync` and `POST /api/dev/disconnect`
-
-Unauthenticated passthroughs to the station endpoints. Their request and
-response shapes are identical to `/api/station/sync` and
-`/api/station/disconnect`.
-
 ### `GET /api/dev/vendor`
 
-This mock lets the disabled client exercise the full local flow.
-
-Without `X-PAYMENT`, it returns HTTP 402:
+This mock lets the disabled client exercise the full local flow. Without
+`X-PAYMENT`, it returns HTTP 402 with one `exact` requirement whose network,
+amount, and asset come from server configuration. `resource` is the full
+request URL.
 
 ```json
 {
@@ -477,9 +374,6 @@ Without `X-PAYMENT`, it returns HTTP 402:
 }
 ```
 
-`network`, `amount`, and `asset` come from the running server configuration;
-`resource` is the full request URL.
-
 With any `X-PAYMENT` header, it returns HTTP 200:
 
 ```json
@@ -496,13 +390,13 @@ With any `X-PAYMENT` header, it returns HTTP 200:
 | `NODE_ENV` | `development` | Production disables `/api/dev/*`. |
 | `PORT` | `3000` | HTTP listen port. |
 | `DATABASE_PATH` | `./data/htn.db` | SQLite path; `:memory:` is supported. |
-| `STATION_API_KEY` | `dev-station-key` | Hardware credential. |
 | `PWA_ORIGIN` | `http://localhost:5173` | Allowed browser origin. |
-| `PUBLIC_APP_URL` | `http://localhost:5173` | Base used in sync pairing URLs. |
+| `PUBLIC_APP_URL` | `http://localhost:5173` | Base used in badge pairing links. |
+| `SOLANA_BOX_ID` | `blind-box-01` | `box` id gated by quest completion. |
 | `SOLANA_CLUSTER` | `devnet` | Must be `devnet` or `mainnet`. |
 | `SOLANA_RPC_URL` | cluster public RPC | Optional RPC override passed to the chain client. |
 | `X402_PAYER_SECRET_KEY` | unset | Enables live validation/payment when present. |
-| `MAX_REWARD_USD` | `1` | Payment ceiling; converted to six-decimal USDC base units and clamped to at least one unit. |
+| `MAX_REWARD_USD` | `1` | Payment ceiling, converted to six-decimal USDC atomic units and clamped to at least one. |
 | `USDC_MINT` | cluster canonical USDC | The only accepted payment asset. |
 
 Changing the configured maximum does not make an already-paid badge eligible

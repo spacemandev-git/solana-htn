@@ -1,11 +1,4 @@
 import { z } from 'zod';
-import type { QuestStatus } from './types.ts';
-
-/** Header the beacons authenticate with. */
-export const API_KEY_HEADER = 'x-station-key';
-
-const badgeId = z.string().min(1).max(64).regex(/^[a-zA-Z0-9._-]+$/, 'badge id must be url-safe');
-const stationId = z.string().min(1).max(64).regex(/^[a-zA-Z0-9._-]+$/, 'station id must be url-safe');
 
 /** base58 alphabet; a 32-byte key encodes to 32–44 chars. */
 const base58Address = z
@@ -15,45 +8,50 @@ const base58Address = z
   .regex(/^[1-9A-HJ-NP-Za-km-z]+$/, 'must be a base58 address');
 
 /**
- * POST /api/station/sync
- * Sent by a beacon when a badge announces itself over ESP-NOW.
- * Idempotent: repeated syncs for a badge already at that beacon just refresh it.
+ * POST /api/box — the blind-box relay webhook.
+ *
+ * The badge builds this body and the relay POSTs it verbatim; the relay can set
+ * no headers, so this endpoint is unauthenticated. Field names are the badge
+ * firmware's (snake_case) and must not change. `user_id` is the identity key;
+ * when it is empty the server falls back to `public_key`. One of the two must
+ * be non-empty.
  */
-export const SyncRequest = z.object({
-  stationId,
-  stationName: z.string().min(1).max(120).optional(),
-  badge: z.object({
-    badgeId,
-    name: z.string().min(1).max(120),
-    email: z.email().max(254),
-  }),
-  /** Signal strength, purely informational. */
-  rssi: z.number().int().min(-127).max(0).optional(),
-});
-export type SyncRequest = z.infer<typeof SyncRequest>;
-
-export const SyncResponse = z.object({
-  pairingCode: z.string(),
-  /** The URL the badge shows as a QR code. */
-  url: z.string(),
-  badgeId: z.string(),
-  /** Null until the badge has submitted the quest. */
-  questStatus: z.enum(['verifying', 'completed', 'failed']).nullable(),
-});
-export type SyncResponse = z.infer<typeof SyncResponse> & { questStatus: QuestStatus | null };
+export const BoxRequest = z
+  .object({
+    /** Station id from the relay beacon. ASCII, max 39 chars. */
+    box: z.string().min(1).max(39).regex(/^[\x21-\x7e]+$/, 'box must be printable ASCII'),
+    /** HTN attendee id, as a string. */
+    user_id: z.string().max(64).default(''),
+    name: z.string().max(120).default(''),
+    email: z.string().max(254).default(''),
+    /** base58 ed25519 wallet. Empty when the badge has none yet. */
+    public_key: z.union([base58Address, z.literal('')]).default(''),
+  })
+  .refine((body) => body.user_id.length > 0 || body.public_key.length > 0, {
+    message: 'user_id or public_key is required',
+  });
+export type BoxRequest = z.infer<typeof BoxRequest>;
 
 /**
- * POST /api/station/disconnect
- * Sent when the badge drops out of ESP-NOW range.
+ * The relay returns this body to the badge over BLE untouched. Serialized it
+ * must be ≤ BOX_RESPONSE_MAX_BYTES; the server drops `chain_link` (never
+ * items) if it would not fit.
  */
-export const DisconnectRequest = z.object({ stationId, badgeId });
-export type DisconnectRequest = z.infer<typeof DisconnectRequest>;
+export const BoxResponse = z.object({
+  /** Item won at this box. Empty string renders "Empty box?" on the badge. */
+  new_item: z.string(),
+  /** URL behind the badge's QR button. Empty hides the QR. */
+  chain_link: z.string(),
+  /** Authoritative inventory; the badge replaces its local state with this. */
+  all_items: z.array(z.string()),
+});
+export type BoxResponse = z.infer<typeof BoxResponse>;
 
 /**
  * POST /api/quest/submit — the hacker hands over their endpoint and program.
  *
- * Authenticated by knowing an *active* pairing code. Verification runs
- * asynchronously; progress streams over the session's SSE channel.
+ * Authenticated by knowing a badge's pairing code. Verification runs
+ * asynchronously; progress streams over the badge's SSE channel.
  */
 export const QuestSubmitRequest = z.object({
   pairingCode: z.string().min(1).max(32),

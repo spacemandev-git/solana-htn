@@ -18,7 +18,7 @@ bun install
 bun run dev          # server on :3000, PWA on :5173
 ```
 
-Open <http://localhost:5173/sim>, fire a fake badge sync, open the pairing
+Open <http://localhost:5173/sim>, tap a box with a fake badge, open its console
 link, and submit `http://localhost:3000/api/dev/vendor` as the endpoint with
 any base58 address as the program id. No hardware, no blockchain, no money —
 payments are simulated until you configure a payer key.
@@ -80,8 +80,8 @@ bun run localnet        # validator + deploy, for local program hacking
 ## Configuration
 
 Copy `.env.example` to `.env`. Every value has a working local default. The
-ones that matter at the event: `STATION_API_KEY` (beacon shared secret),
-`SOLANA_CLUSTER`, `X402_PAYER_SECRET_KEY` (the paying wallet), and
+ones that matter at the event: `SOLANA_BOX_ID` (the `box` id of the Solana
+station, default `blind-box-01`), `SOLANA_CLUSTER`, `X402_PAYER_SECRET_KEY` (the paying wallet), and
 `MAX_REWARD_USD` (the per-badge cap, default $1).
 
 ## Documentation

@@ -8,11 +8,22 @@
 	let { status }: Props = $props();
 
 	let online = $derived(status === 'live');
+	let label = $derived(
+		status === 'loading'
+			? 'Loading'
+			: status === 'reconnecting'
+				? 'Reconnecting'
+				: status === 'unreachable'
+					? 'Unreachable'
+					: status === 'missing'
+						? 'Missing'
+						: 'Live'
+	);
 </script>
 
 <span class="pill status" class:tone-live={online} class:tone-off={!online} aria-live="polite">
 	<span class="dot" class:pulse={online}></span>
-	{online ? 'Live' : 'Offline'}
+	{label}
 </span>
 
 <style>

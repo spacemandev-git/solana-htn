@@ -2,15 +2,10 @@ import { Hono } from 'hono';
 import { CLUSTERS } from '@htn/shared';
 import { wipeDatabase } from '../db/index.ts';
 import type { ServiceContext } from '../services/context.ts';
-import { stationRoutes } from './station.ts';
 
 const MOCK_PROGRAM = '11111111111111111111111111111111';
 
-/**
- * Unauthenticated helpers for the local simulator UI. Mounted only when
- * NODE_ENV !== 'production' (see app.ts); the real station endpoints keep
- * their API key either way.
- */
+/** Unauthenticated helpers for the local simulator UI. */
 export function devRoutes(ctx: ServiceContext): Hono {
   const routes = new Hono();
 
@@ -47,10 +42,6 @@ export function devRoutes(ctx: ServiceContext): Hono {
       402,
     );
   });
-
-  // Same sync/disconnect behaviour as a real hub, minus the API key, so the
-  // simulator can drive the whole flow from the browser.
-  routes.route('/', stationRoutes(ctx));
 
   return routes;
 }

@@ -2,12 +2,14 @@
 
 ## The activation
 
-Hack the North attendees wear an ESP32-C3 badge. Around the venue are
-**beacons** — ESP32 hubs that badges announce themselves to over ESP-NOW. Walk
-up to one, the beacon reports your badge to the server, and your badge gets a
-QR code. Scan it and your phone is live-paired to the event over SSE.
+Hack the North attendees wear an ESP32-C3 badge. Around the venue are eight
+**blind boxes**. A badge taps a box, the hardware relay POSTs the firmware
+payload to the server, and the server returns a newly awarded item plus the
+badge's permanent QR link. Scan it and the phone opens the badge's live state
+over SSE.
 
-There is exactly **one quest**, and it pays real money:
+Seven boxes award one unowned regular item. The Solana box stays empty until
+the badge completes the quest, then awards both Solana items:
 
 > Deploy a tiny Anchor program that stores a message on Solana. Wrap it in an
 > HTTP endpoint paywalled with **x402**. Submit the URL. Our agent calls your
@@ -19,12 +21,13 @@ custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
 
 ## Pieces
 
-```
- ESP32 badge ──ESP-NOW──▶ Beacon ──HTTPS POST──▶ apps/server
-                                   x-station-key     │
-                                                     │ pairing code + URL (QR)
-                                                     ▼
-                    hacker's phone ◀──── SSE ──── apps/pwa  /s/:pairingCode
+```text
+ ESP32 badge ──BLE──▶ Box relay ──HTTPS POST /api/box──▶ apps/server
+       ▲                                                   │
+       └──────── item inventory + permanent pairing URL ───┘
+                                                           │ badge state + events
+                                                           ▼
+                    hacker's phone ◀──── SSE ───────── apps/pwa /s/:pairingCode
                           │ submits { endpointUrl, programId }
                           ▼
                     apps/server verification agent
@@ -36,18 +39,18 @@ custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
 
 | Package | Role |
 | --- | --- |
-| `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). SSE hub. Runs the verification agent and holds the x402 payer key. |
+| `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). Awards blind-box items, fans out badge SSE, runs the verification agent, and holds the x402 payer key. |
 | `apps/pwa` | SvelteKit 5 terminal-themed PWA: the quest console, plus the operator/simulator dashboard. |
-| `packages/shared` | The contract: domain types, zod API schemas, and the pinned quest constants (PDA seed, byte offsets, cluster/network/USDC ids). |
+| `packages/shared` | The contract: domain types, zod API schemas, item pools, and pinned quest constants (PDA seed, byte offsets, cluster/network/USDC ids). |
 | `packages/chain` | The x402 + Solana module: 402 challenge parsing/validation, the paying `fetch`, and raw RPC reads of hacker programs. |
 | `program` | `htn_quest`, the Anchor 2.0 reference program hackers deploy. See [PROGRAM.md](PROGRAM.md). |
 | `starter` | The kit hackers copy: an x402-paywalled Hono server + a `set-message` script. See [QUEST.md](QUEST.md). |
 
 ## The verification pipeline
 
-A submission is `{ endpointUrl, programId }`, authenticated by an active
-pairing code. The agent then runs five steps, streaming each over SSE so the
-phone renders a live terminal log:
+A submission is `{ endpointUrl, programId }`, authenticated by a badge pairing
+code. The agent then runs five steps, streaming each over SSE so the phone
+renders a live terminal log:
 
 1. **program** — `programId` is a live, executable account on the cluster.
 2. **state** — `PDA(["quest"], programId)` exists, is owned by that program,
@@ -75,6 +78,15 @@ is enforced twice more, independently: at challenge validation and again
 inside `packages/chain` right before paying. The server can lose at most the
 cap per badge, once.
 
+### Box replay and inventory are database facts
+
+Each award is unique by `(badge_id, item)`, and records the box that granted it.
+If the same badge taps the same box again, that box's first award is replayed.
+Regular boxes choose only from unowned regular items. The Solana box checks the
+persisted quest status and grants its two items together. The response always
+contains the complete authoritative inventory, so badge-local state can recover
+after a reset or dropped relay response.
+
 ### The x402 knowledge lives in one package
 
 `packages/chain` is the only code that knows what a 402 challenge looks like
@@ -88,18 +100,18 @@ never touches `apps/server`.
 
 No `X402_PAYER_SECRET_KEY` → the disabled client: chain reads are skipped,
 and the payment step sends a simulated `X-PAYMENT` that only the dev mock
-vendor (`GET /api/dev/vendor`) accepts. The whole badge → beacon → phone →
-quest loop is demoable offline via `/sim`, which matters at a hackathon where
-venue wifi is the least reliable component. `/api/health` reports
-`chainEnabled` so the mode is never ambiguous.
+vendor (`GET /api/dev/vendor`) accepts. The whole badge → box → phone → quest
+loop is demoable offline via `/sim`, which matters at a hackathon where venue
+wifi is the least reliable component. `/api/health` reports `chainEnabled` so
+the mode is never ambiguous.
 
 ### Verification is asynchronous, progress is push
 
 `POST /api/quest/submit` answers 202 immediately; the pipeline runs in the
 background and publishes `quest-progress` / `quest-result` events to the
-session's SSE channel. Walking away from the beacon ends the *session*, not
-the verification — the agent finishes regardless, and the result is waiting at
-the next sync.
+badge's permanent SSE channel. The verification finishes independently of
+whether a browser is connected, and its result is present in the next
+authoritative state fetch.
 
 ### The server verifies the hacker's program by raw bytes, not by IDL
 
@@ -111,11 +123,11 @@ that exact offset against LiteSVM, so the contract cannot drift silently.
 
 ## Data flow: one hacker, one afternoon
 
-1. Hacker taps their badge near the **registration beacon**. It POSTs
-   `/api/station/sync`; the badge screen shows a QR for `/s/4CW5G5`.
-2. The phone opens the quest console: the brief, the env facts (cluster, USDC
-   mint, reward cap, the agent's address), and a submission prompt.
-3. Hacker clones the repo, deploys `htn_quest` to devnet, runs
+1. A hacker taps any regular blind box. The relay POSTs `/api/box`; the badge
+   receives an item, its authoritative inventory, and `/s/4CW5G5`.
+2. The phone opens the quest console: the brief, inventory, and environment
+   facts (cluster, USDC mint, reward cap, Solana box id, agent address).
+3. The hacker clones the repo, deploys `htn_quest` to devnet, runs
    `bun run set-message "gm htn"`, starts `starter/` with their wallet as
    `payTo`, and tunnels it.
 4. They submit the URL + program id. The console streams:
@@ -123,13 +135,13 @@ that exact offset against LiteSVM, so the contract cannot drift silently.
    `✔ endpoint answers 402 with valid terms — $1.00 to 7f9k…`,
    `✔ x402 payment settled`, `✔ paid response matches on-chain state`.
 5. The payout panel shows $1.00, the settlement signature (explorer link), and
-   their message writ large. The USDC is already in their wallet.
+   their message. Their next tap at `blind-box-01` awards item `9` (item `8` came on their first tap there).
 
 ## Testing
 
 | Suite | Command | What it proves |
 | --- | --- | --- |
-| Server | `bun test apps/server` | Auth, session lifecycle, the five-step pipeline against a fake chain, the pay-once invariant |
+| Server | `bun test apps/server` | Box replay, inventory exhaustion, Solana gating, badge SSE, the five-step pipeline against a fake chain, and the pay-once invariant |
 | Chain | `bun test packages/chain` | 402 envelope parsing (v1+v2), cap enforcement, quest-account byte decoding, disabled-mode flow |
 | Program | `bun run program:test` | LiteSVM: instruction auth and the byte-offset contract the server depends on |
 | Starter | `bun test starter` | The kit actually emits a compliant 402 with the right mint/network/cap |

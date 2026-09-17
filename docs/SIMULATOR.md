@@ -1,8 +1,8 @@
-# Driving the quest without hardware
+# Driving the blind boxes without hardware
 
-`/sim` is the operator console for the complete badge-to-quest flow. It sends
-the same sync and disconnect requests as an ESP32 beacon, produces the same
-pairing QR, and watches the same quest status returned by the server.
+`/sim` is a development-only blind-box tapper. It sends the same
+`POST /api/box` payload as the badge relay, displays the response exactly as
+JSON, and links directly to each badge's permanent console.
 
 Start the app, then open <http://localhost:5173/sim>:
 
@@ -10,69 +10,69 @@ Start the app, then open <http://localhost:5173/sim>:
 bun run dev
 ```
 
-## Setup
+No API key or special route mode is required. Box taps are intentionally
+unauthenticated because the physical relay cannot attach headers.
 
-For the quickest local demo, enable **Use `/api/dev/*`** in the simulator.
-These development-only routes do not require a station key. To exercise the
-authenticated route instead, leave that switch off and enter
-`STATION_API_KEY` (the development default is `dev-station-key`). The
-selection, fake rosters, route mode, and key are kept in browser storage.
+## Tap controls
 
-The header reports `GET /api/health`, including the cluster and whether chain
-access is enabled. The simulator polls the badge table every three seconds; the
-Auto switch can pause polling.
+The tool keeps six seeded fake badges in browser storage under `htn.sim.v2`.
+Each badge has a user id, name, email, and an optional public key. Pick a badge
+and one of the eight fixed boxes (`blind-box-01` through `blind-box-08`), then
+select **Tap box**.
 
-## Controls
+The box matching `solanaBoxId` from `GET /api/health` is labeled **Solana box**.
+Every tap sends:
 
-- **Sync badge** sends the selected fake badge and station to
-  `POST /api/dev/sync` or `POST /api/station/sync`. The response contains a
-  pairing code, which can be opened directly or displayed as a QR.
-- **Disconnect** ends the selected badge's active session. This changes the
-  phone header to OFFLINE, but an in-flight verification continues on the
-  server and its result is retained.
-- **Edit roster** adds or removes fake stations and badges. Restore seeded
-  roster returns to the six built-in examples without clearing the station key.
-- **Reset server** calls `POST /api/dev/reset` and wipes badges, sessions, and
-  quest submissions.
-- **Badge table** shows each badge's active station, pairing code, and quest
-  state: `—`, `verifying`, `completed`, or `failed`.
+```json
+{
+  "box": "blind-box-02",
+  "user_id": "htn-0417",
+  "name": "Ada Nkemelu",
+  "email": "ada.nkemelu@uwaterloo.ca",
+  "public_key": ""
+}
+```
 
-The raw response and operator log make request failures visible without opening
-browser developer tools.
+After a successful tap, the response panel shows the raw `BoxResponse`, its
+compact JSON size in UTF-8 bytes, and an **Open console** link parsed from
+`chain_link`. The byte counter turns red above the shared
+`BOX_RESPONSE_MAX_BYTES` limit because a physical relay would truncate that
+payload.
+
+The badge table shows badge id, name, collected item ids, quest status, and a
+console link. It refreshes after every tap and every five seconds while `/sim`
+is open.
+
+**Reset server** calls the development-only `POST /api/dev/reset` endpoint and
+clears badges, awards, and quest submissions. It does not change the fake
+badge selection stored in the browser.
 
 ## Full offline quest demo
 
 When the server has no chain payer configured, it uses its disabled chain
 client. Program and account reads are skipped, and payment is simulated. The
-development mock vendor accepts that simulated payment, so the entire UI and
-verification pipeline can be demonstrated without RPC, USDC, or a deployed
+development mock vendor accepts that simulated payment, so the complete box,
+inventory, and verification flow works without RPC, USDC, or a deployed
 program.
 
-1. Start `bun run dev`, open `/sim`, and enable **Use `/api/dev/*`**.
-2. Click **Reset server** for a clean run.
-3. Choose a badge and station, then click **Sync badge**.
-4. Open the returned `/s/:pairingCode` link or scan its QR.
-5. In the quest form, submit:
+1. Start `bun run dev`, open `/sim`, and select **Reset server**.
+2. Pick a fake badge and a regular box, then select **Tap box**.
+3. Follow **Open console** from the response panel.
+4. In the quest form, submit:
 
    - endpoint URL: `http://localhost:3000/api/dev/vendor`
    - program ID: `11111111111111111111111111111111`
 
-6. Watch the phone's verification log advance through program, state,
-   challenge, payment, and proof. The simulator table changes from
-   `verifying` to `completed`.
-7. The outcome shows **simulated payment** and the mock proof message. No funds
-   move in this mode.
+5. Watch the verification log advance through program, state, challenge,
+   payment, and proof. The simulator table changes from `verifying` to
+   `completed`.
+6. Return to `/sim`, choose the box labeled **Solana box**, and tap it with the
+   same fake badge. The response awards item `9` (item `8` came on the first tap); the console inventory
+   updates over its live stream.
 
 The phone must be able to reach the server origin. A phone on the same LAN
 cannot use its own `localhost`; open the PWA through the development machine's
 LAN address and submit that machine's address for the mock vendor instead.
-
-## Disconnect during verification
-
-To demonstrate the server-side lifecycle, submit the quest and immediately
-click **Disconnect** in the simulator. The phone reports that the station signal
-was lost while the verifier continues. Reconnect the stream or sync the same
-badge again to see the stored result. Disconnecting never cancels verification.
 
 ## Chain-enabled demo
 

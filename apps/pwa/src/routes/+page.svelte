@@ -12,16 +12,19 @@
 	}
 
 	const FLOW = [
-		{ prompt: '01', title: 'badge', copy: 'Your ESP32-C3 announces itself nearby.' },
-		{ prompt: '02', title: 'beacon', copy: 'A station opens one live pairing session.' },
-		{ prompt: '03', title: 'QR', copy: 'Scan the code to open your quest console.' },
-		{ prompt: '04', title: 'quest', copy: 'Deploy, serve, and submit your build.' },
-		{ prompt: '05', title: 'get paid', copy: 'The agent verifies it and settles in USDC.' }
+		{ prompt: '01', title: 'tap a box', copy: 'Tap any blind box with your badge.' },
+		{ prompt: '02', title: 'scan the QR', copy: 'Your badge shows its permanent console link.' },
+		{ prompt: '03', title: 'open your console', copy: 'See all nine items and your quest progress.' },
+		{
+			prompt: '04',
+			title: 'unlock the finale',
+			copy: 'Tap the Solana box for item 8, then finish the quest to unlock item 9.'
+		}
 	] as const;
 </script>
 
 <svelte:head>
-	<title>HTN × Solana — Quest Activation</title>
+	<title>HTN × Solana — Badge Console</title>
 </svelte:head>
 
 <main class="shell landing">
@@ -34,11 +37,11 @@
 		</div>
 
 		<div class="content">
-			<p class="label label-bright">$ htn quest --start</p>
-			<h1 class="display">Build it.<br /><span>Prove it.</span><br />Get paid.</h1>
+			<p class="label label-bright">$ htn badge --collect</p>
+			<h1 class="display">8 boxes.<br /><span>9 items.</span><br />One quest.</h1>
 			<p class="body lede">
-				One badge. One quest. Ship a Solana program and an x402 endpoint; the agent pays once,
-				then verifies your proof on-chain.
+				Tap your way through the blind boxes, track your collection here, and tap the Solana box
+				for item 8, and finish the quest to unlock item 9.
 			</p>
 
 			<ol class="flow">
@@ -52,6 +55,20 @@
 					</li>
 				{/each}
 			</ol>
+
+			<section class="ai-card card">
+				<h2>AI at Solana scale.</h2>
+				<p>
+					The quest is built on the same stack the ecosystem uses: MCP servers, agent kits, and
+					agentic payments over x402.
+				</p>
+				<a
+					class="btn btn-primary"
+					href="https://solana.com/ai"
+					target="_blank"
+					rel="noopener">Explore AI on Solana ↗</a
+				>
+			</section>
 
 			<form class="jump" onsubmit={open}>
 				<label class="sr-only" for="pairing">Pairing code</label>
@@ -69,7 +86,7 @@
 			</form>
 
 			{#if dev}
-				<a class="simlink label" href="/sim">operator simulator →</a>
+				<a class="simlink label" href="/sim">box simulator →</a>
 			{/if}
 		</div>
 	</section>
@@ -125,7 +142,11 @@
 	}
 
 	.display span {
-		color: var(--green);
+		background: var(--solana-gradient);
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+		-webkit-text-fill-color: transparent;
 	}
 
 	.lede {
@@ -167,6 +188,25 @@
 	.flow li div span {
 		font-size: 0.82rem;
 		color: var(--ink-faint);
+	}
+
+	.ai-card {
+		margin-bottom: 24px;
+		padding: 20px;
+		background: var(--bg-raise);
+	}
+
+	.ai-card h2 {
+		margin: 0;
+		font-size: 1.15rem;
+		letter-spacing: -0.025em;
+	}
+
+	.ai-card p {
+		margin: 8px 0 16px;
+		color: var(--ink-mute);
+		font-size: 0.85rem;
+		line-height: 1.55;
 	}
 
 	.jump {
