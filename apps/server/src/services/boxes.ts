@@ -1,9 +1,8 @@
-import { randomInt } from 'node:crypto';
 import {
   BOX_RESPONSE_MAX_BYTES,
   QUEST_REWARD_ITEM,
-  REGULAR_ITEMS,
   SOLANA_BOX_ITEM,
+  boxById,
   type Award,
   type Badge,
   type BoxRequest,
@@ -56,15 +55,12 @@ export function decideBox(ctx: ServiceContext, request: BoxRequest): BoxDecision
       newItem = prior.at(-1)?.item ?? '';
     }
   } else {
-    const prior = awardsAtBox(ctx.db, badgeId, request.box);
-    if (prior.length > 0) {
-      newItem = prior[0]!.item;
-    } else {
-      const remaining = REGULAR_ITEMS.filter((item) => !owned.has(item));
-      if (remaining.length > 0) {
-        newItem = remaining[randomInt(remaining.length)]!;
-        grantAward(ctx.db, badgeId, newItem, request.box, at);
-      }
+    // Every regular box hands out one fixed item. Unknown box ids are an
+    // empty box, but the badge still gets its console link.
+    const item = boxById(request.box)?.item;
+    if (item !== undefined && item !== SOLANA_BOX_ITEM) {
+      if (!owned.has(item)) grantAward(ctx.db, badgeId, item, request.box, at);
+      newItem = item;
     }
   }
 

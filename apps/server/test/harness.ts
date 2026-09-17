@@ -114,7 +114,7 @@ export function createHarness(chain = new FakeQuestChain()): Harness {
     PUBLIC_APP_URL: 'http://localhost:5173',
     PWA_ORIGIN: 'http://localhost:5173',
     SOLANA_CLUSTER: chain.cluster,
-    SOLANA_BOX_ID: 'blind-box-01',
+    SOLANA_BOX_ID: 'solana-booth',
     MAX_REWARD_USD: '1',
   });
 

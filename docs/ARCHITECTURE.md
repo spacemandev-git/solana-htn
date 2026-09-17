@@ -135,7 +135,7 @@ that exact offset against LiteSVM, so the contract cannot drift silently.
    `✔ endpoint answers 402 with valid terms — $1.00 to 7f9k…`,
    `✔ x402 payment settled`, `✔ paid response matches on-chain state`.
 5. The payout panel shows $1.00, the settlement signature (explorer link), and
-   their message. Their next tap at `blind-box-01` awards item `9` (item `8` came on their first tap there).
+   their message. Their next tap at `solana-booth` awards item `9` (item `8` came on their first tap there).
 
 ## Testing
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { BOX_RESPONSE_MAX_BYTES, type BadgeSummary, type BoxResponse } from '@htn/shared';
+	import { BOXES, BOX_RESPONSE_MAX_BYTES, type BadgeSummary, type BoxResponse } from '@htn/shared';
 	import { describeError, devReset, getBadges, getHealth, tapBox, type Health } from '$lib/api.ts';
-	import { BOXES, SimState } from '$lib/sim.svelte.ts';
+	import { SimState } from '$lib/sim.svelte.ts';
 
 	const sim = new SimState();
 
@@ -153,9 +153,11 @@
 				<label class="field">
 					<span class="label">Box</span>
 					<select class="select" bind:value={sim.selectedBox}>
-						{#each BOXES as box (box)}
-							<option value={box}>
-								{box}{health?.solanaBoxId === box ? ' — Solana box' : ''}
+						{#each BOXES as box (box.id)}
+							<option value={box.id}>
+								{box.name} ({box.id}) → item {box.item}{health?.solanaBoxId === box.id
+									? ' — Solana box'
+									: ''}
 							</option>
 						{/each}
 					</select>

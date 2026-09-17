@@ -1,6 +1,6 @@
 # Driving the blind boxes without hardware
 
-`/sim` is a development-only blind-box tapper. It sends the same
+`/sim` is a development-only box tapper. It sends the same
 `POST /api/box` payload as the badge relay, displays the response exactly as
 JSON, and links directly to each badge's permanent console.
 
@@ -17,15 +17,26 @@ unauthenticated because the physical relay cannot attach headers.
 
 The tool keeps six seeded fake badges in browser storage under `htn.sim.v2`.
 Each badge has a user id, name, email, and an optional public key. Pick a badge
-and one of the eight fixed boxes (`blind-box-01` through `blind-box-08`), then
-select **Tap box**.
+and one of the eight fixed boxes, then select **Tap box**. Each box hands out
+one fixed item:
+
+| Box id | Zone | Item |
+| --- | --- | --- |
+| `solana-booth` | Solana Booth | `8` (`9` after the quest) |
+| `hardware-hub` | Hardware Hub | `1` |
+| `extended-bay` | Extended Sponsor Bay | `2` |
+| `mentor-cafe` | Mentor Cafe | `3` |
+| `third-floor` | Third Floor Hacking Space | `4` |
+| `fourth-floor` | Fourth Floor Hacking Space | `5` |
+| `fifth-floor` | Fifth Floor Hacking Space | `6` |
+| `seventh-floor` | Seventh Floor | `7` |
 
 The box matching `solanaBoxId` from `GET /api/health` is labeled **Solana box**.
 Every tap sends:
 
 ```json
 {
-  "box": "blind-box-02",
+  "box": "hardware-hub",
   "user_id": "htn-0417",
   "name": "Ada Nkemelu",
   "email": "ada.nkemelu@uwaterloo.ca",

@@ -18,7 +18,7 @@
 		{
 			prompt: '04',
 			title: 'unlock the finale',
-			copy: 'Tap the Solana box for item 8, then finish the quest to unlock item 9.'
+			copy: 'Tap the Solana Booth for item 8, then finish the quest to unlock item 9.'
 		}
 	] as const;
 </script>
@@ -40,7 +40,7 @@
 			<p class="label label-bright">$ htn badge --collect</p>
 			<h1 class="display">8 boxes.<br /><span>9 items.</span><br />One quest.</h1>
 			<p class="body lede">
-				Tap your way through the blind boxes, track your collection here, and tap the Solana box
+				Tap your way through the blind boxes, track your collection here, and tap the Solana Booth
 				for item 8, and finish the quest to unlock item 9.
 			</p>
 

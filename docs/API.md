@@ -51,7 +51,7 @@ POST /api/box
 Content-Type: application/json
 
 {
-  "box": "north-hall-03",
+  "box": "hardware-hub",
   "user_id": "1042",
   "name": "Ada Hacker",
   "email": "ada@example.com",
@@ -66,9 +66,9 @@ values never erase previously recorded non-empty values.
 
 ```json
 {
-  "new_item": "4",
+  "new_item": "1",
   "chain_link": "http://localhost:5173/s/7KQ9DW",
-  "all_items": ["4"]
+  "all_items": ["1"]
 }
 ```
 
@@ -79,17 +79,30 @@ values never erase previously recorded non-empty values.
 The serialized response is at most 207 UTF-8 bytes. If necessary, the server
 sets `chain_link` to `""`; it never drops inventory items.
 
-A repeated `(box, badge)` tap replays the same `new_item` and complete response
-without awarding another item. A regular box selects uniformly from regular
-items the badge does not own. It returns `new_item: ""` when all seven regular
-items are already owned.
+Every box hands out one fixed item, so a repeated `(box, badge)` tap replays
+the same `new_item` and complete response without awarding anything new:
 
-The configured Solana box (default `blind-box-01`) hands out item `"8"` on the
+| `box` | Zone | Item |
+| --- | --- | --- |
+| `solana-booth` | Solana Booth | `"8"`, then `"9"` after the quest |
+| `hardware-hub` | Hardware Hub | `"1"` |
+| `extended-bay` | Extended Sponsor Bay | `"2"` |
+| `mentor-cafe` | Mentor Cafe | `"3"` |
+| `third-floor` | Third Floor Hacking Space | `"4"` |
+| `fourth-floor` | Fourth Floor Hacking Space | `"5"` |
+| `fifth-floor` | Fifth Floor Hacking Space | `"6"` |
+| `seventh-floor` | Seventh Floor | `"7"` |
+
+The table is pinned in `packages/shared/src/items.ts`. A `box` id that is not
+in it returns `new_item: ""` (the badge shows "Empty box?") but still returns
+the pairing link and the current inventory.
+
+The configured Solana box (default `solana-booth`) hands out item `"8"` on the
 first tap like any other box. Item `"9"` is the quest reward: a tap after the
 badge's quest is `completed` awards it (`new_item: "9"`), and a badge that
 completed the quest before its first Solana tap receives `"8"` and `"9"`
 together with `new_item: "8"`. Any later tap replays the most recent item that
-box handed out. Thus an empty box means the regular pool is exhausted.
+box handed out. Thus an empty box means the box id is unknown to the server.
 
 ## `GET /api/badge/:pairingCode`
 
@@ -110,7 +123,7 @@ Returns the full browser view for the permanently paired badge:
     {
       "badgeId": "1042",
       "item": "4",
-      "box": "north-hall-03",
+      "box": "hardware-hub",
       "awardedAt": "2026-08-28T16:00:00.000Z"
     }
   ],
@@ -122,7 +135,7 @@ Returns the full browser view for the permanently paired badge:
     "usdcMint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
     "maxRewardAtomic": 1000000,
     "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
-    "solanaBoxId": "blind-box-01"
+    "solanaBoxId": "solana-booth"
   }
 }
 ```
@@ -267,7 +280,7 @@ Returns one summary per badge. `items` contains award ids oldest first and
   "payerAddress": "9wFFmG6Q7examplePayerAddress111111111111",
   "maxRewardAtomic": 1000000,
   "badgeCount": 42,
-  "solanaBoxId": "blind-box-01"
+  "solanaBoxId": "solana-booth"
 }
 ```
 
@@ -392,7 +405,7 @@ With any `X-PAYMENT` header, it returns HTTP 200:
 | `DATABASE_PATH` | `./data/htn.db` | SQLite path; `:memory:` is supported. |
 | `PWA_ORIGIN` | `http://localhost:5173` | Allowed browser origin. |
 | `PUBLIC_APP_URL` | `http://localhost:5173` | Base used in badge pairing links. |
-| `SOLANA_BOX_ID` | `blind-box-01` | `box` id gated by quest completion. |
+| `SOLANA_BOX_ID` | `solana-booth` | `box` id gated by quest completion. |
 | `SOLANA_CLUSTER` | `devnet` | Must be `devnet` or `mainnet`. |
 | `SOLANA_RPC_URL` | cluster public RPC | Optional RPC override passed to the chain client. |
 | `X402_PAYER_SECRET_KEY` | unset | Enables live validation/payment when present. |

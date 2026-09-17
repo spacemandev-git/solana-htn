@@ -59,7 +59,7 @@ and Cloud Run, and submit Cloud Builds. Billing must be enabled.
 Defaults can be changed with `--project` / `HTN_PROJECT`, `--region` /
 `HTN_REGION`, `HTN_API_URL` (default `https://api.solana-htn.com`),
 `HTN_PWA_URL` (default `https://solana-htn.com`), and `HTN_SOLANA_BOX_ID`
-(default `blind-box-01`). Images are tagged with the short Git SHA plus
+(default `solana-booth`). Images are tagged with the short Git SHA plus
 `-dirty` when the worktree is dirty; `--tag` overrides it.
 
 ## Commands

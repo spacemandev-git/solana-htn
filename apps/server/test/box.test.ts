@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   BOX_RESPONSE_MAX_BYTES,
+  BOXES,
   REGULAR_ITEMS,
   type ApiError,
   type BadgeSummary,
@@ -31,7 +32,7 @@ afterEach(() => {
 
 describe('blind boxes', () => {
   test('first regular tap awards one item and returns a readable badge link', async () => {
-    const response = await h.box(boxBody('badge-first', 'regular-1'));
+    const response = await h.box(boxBody('badge-first', 'extended-bay'));
     expect(response.status).toBe(200);
     const body = await json<BoxResponse>(response);
     expect(REGULAR_ITEMS).toContain(body.new_item as (typeof REGULAR_ITEMS)[number]);
@@ -46,41 +47,46 @@ describe('blind boxes', () => {
   });
 
   test('same box replays an identical body without another grant', async () => {
-    const first = await json<BoxResponse>(await h.box(boxBody('badge-replay', 'regular-1')));
-    const second = await json<BoxResponse>(await h.box(boxBody('badge-replay', 'regular-1')));
+    const first = await json<BoxResponse>(await h.box(boxBody('badge-replay', 'extended-bay')));
+    const second = await json<BoxResponse>(await h.box(boxBody('badge-replay', 'extended-bay')));
     expect(second).toEqual(first);
     expect(second.all_items).toHaveLength(1);
   });
 
-  test('seven regular boxes cover the pool and an eighth is empty', async () => {
-    const won: string[] = [];
-    for (let i = 1; i <= 7; i++) {
-      const body = await json<BoxResponse>(
-        await h.box(boxBody('badge-complete-set', `regular-${i}`)),
-      );
-      won.push(body.new_item);
+  test('each box hands out its fixed item and unknown boxes are empty', async () => {
+    const expected: Record<string, string> = {
+      'hardware-hub': '1',
+      'extended-bay': '2',
+      'mentor-cafe': '3',
+      'third-floor': '4',
+      'fourth-floor': '5',
+      'fifth-floor': '6',
+      'seventh-floor': '7',
+    };
+    let last: BoxResponse | null = null;
+    for (const [box, item] of Object.entries(expected)) {
+      last = await json<BoxResponse>(await h.box(boxBody('badge-tour', box)));
+      expect(last.new_item).toBe(item);
     }
-    expect(new Set(won).size).toBe(7);
-    expect([...won].sort()).toEqual([...REGULAR_ITEMS]);
+    expect(last!.all_items).toEqual(['1', '2', '3', '4', '5', '6', '7']);
 
-    const eighth = await json<BoxResponse>(
-      await h.box(boxBody('badge-complete-set', 'regular-8')),
-    );
-    expect(eighth.new_item).toBe('');
-    expect(eighth.all_items).toHaveLength(7);
+    const unknown = await json<BoxResponse>(await h.box(boxBody('badge-tour', 'mystery-box')));
+    expect(unknown.new_item).toBe('');
+    expect(unknown.all_items).toEqual(['1', '2', '3', '4', '5', '6', '7']);
+    expect(unknown.chain_link).toBe(last!.chain_link);
   });
 
   test('Solana box gives item 8 at once and item 9 only after the quest', async () => {
-    const regular = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'regular-1')));
+    const regular = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'extended-bay')));
     const before = await json<BoxResponse>(
-      await h.box(boxBody('badge-solana', 'blind-box-01')),
+      await h.box(boxBody('badge-solana', 'solana-booth')),
     );
     expect(before.new_item).toBe('8');
     expect(before.all_items).toEqual([...regular.all_items, '8']);
     expect(before.chain_link).not.toBe('');
 
     // Re-tapping before the quest replays 8 and grants nothing.
-    const again = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'blind-box-01')));
+    const again = await json<BoxResponse>(await h.box(boxBody('badge-solana', 'solana-booth')));
     expect(again).toEqual(before);
 
     const pairingCode = before.chain_link.split('/').at(-1)!;
@@ -88,27 +94,27 @@ describe('blind boxes', () => {
     await waitForQuest(h, 'badge-solana');
 
     const after = await json<BoxResponse>(
-      await h.box(boxBody('badge-solana', 'blind-box-01')),
+      await h.box(boxBody('badge-solana', 'solana-booth')),
     );
     expect(after.new_item).toBe('9');
     expect(after.all_items.slice(-2)).toEqual(['8', '9']);
     const replay = await json<BoxResponse>(
-      await h.box(boxBody('badge-solana', 'blind-box-01')),
+      await h.box(boxBody('badge-solana', 'solana-booth')),
     );
     expect(replay.new_item).toBe('9');
     expect(replay).toEqual(after);
   });
 
   test('a badge that finished the quest before its first Solana tap gets 8 and 9 together', async () => {
-    const first = await json<BoxResponse>(await h.box(boxBody('badge-early', 'regular-1')));
+    const first = await json<BoxResponse>(await h.box(boxBody('badge-early', 'extended-bay')));
     const pairingCode = first.chain_link.split('/').at(-1)!;
     expect((await h.post('/api/quest/submit', questBody(pairingCode))).status).toBe(202);
     await waitForQuest(h, 'badge-early');
 
-    const solana = await json<BoxResponse>(await h.box(boxBody('badge-early', 'blind-box-01')));
+    const solana = await json<BoxResponse>(await h.box(boxBody('badge-early', 'solana-booth')));
     expect(solana.new_item).toBe('8');
     expect(solana.all_items.slice(-2)).toEqual(['8', '9']);
-    const replay = await json<BoxResponse>(await h.box(boxBody('badge-early', 'blind-box-01')));
+    const replay = await json<BoxResponse>(await h.box(boxBody('badge-early', 'solana-booth')));
     expect(replay.new_item).toBe('9');
   });
 
@@ -137,13 +143,13 @@ describe('blind boxes', () => {
   });
 
   test('nine-item response fits and oversized links are blanked', async () => {
-    for (let i = 1; i <= 7; i++) {
-      await h.box(boxBody('badge-size', `regular-${i}`));
+    for (const box of BOXES) {
+      if (box.id !== 'solana-booth') await h.box(boxBody('badge-size', box.id));
     }
     const summary = (await json<BadgeSummary[]>(await h.request('/api/badges')))[0]!;
     await h.post('/api/quest/submit', questBody(summary.badge.pairingCode));
     await waitForQuest(h, 'badge-size');
-    const response = await h.box(boxBody('badge-size', 'blind-box-01'));
+    const response = await h.box(boxBody('badge-size', 'solana-booth'));
     const body = await json<BoxResponse>(response);
     expect(body.all_items).toHaveLength(9);
     expect(Buffer.byteLength(JSON.stringify(body), 'utf8')).toBeLessThanOrEqual(
@@ -157,12 +163,12 @@ describe('blind boxes', () => {
   });
 
   test('a tap publishes exactly one authoritative state event', async () => {
-    const initial = await json<BoxResponse>(await h.box(boxBody('badge-push', 'regular-0')));
+    const initial = await json<BoxResponse>(await h.box(boxBody('badge-push', 'hardware-hub')));
     const pairingCode = initial.chain_link.split('/').at(-1)!;
     const events: LiveEvent[] = [];
     const unsubscribe = h.ctx.live.subscribe(pairingCode, (event) => events.push(event));
 
-    const tapped = await json<BoxResponse>(await h.box(boxBody('badge-push', 'regular-1')));
+    const tapped = await json<BoxResponse>(await h.box(boxBody('badge-push', 'extended-bay')));
     unsubscribe();
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({

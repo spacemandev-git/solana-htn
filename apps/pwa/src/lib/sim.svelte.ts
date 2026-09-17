@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { BOX_COUNT } from '@htn/shared';
+import { BOXES } from '@htn/shared';
 
 export interface SimBadge {
 	userId: string;
@@ -17,11 +17,6 @@ export const DEFAULT_BADGES: SimBadge[] = [
 	{ userId: 'htn-5079', name: 'Mei Lin', email: 'mei.lin@queensu.ca', publicKey: '' }
 ];
 
-export const BOXES = Array.from(
-	{ length: BOX_COUNT },
-	(_, index) => `blind-box-${String(index + 1).padStart(2, '0')}`
-);
-
 const KEY = 'htn.sim.v2';
 
 interface Snapshot {
@@ -33,7 +28,7 @@ interface Snapshot {
 export class SimState {
 	badges = $state<SimBadge[]>(DEFAULT_BADGES.map((badge) => ({ ...badge })));
 	selectedBadgeId = $state(DEFAULT_BADGES[0]?.userId ?? '');
-	selectedBox = $state(BOXES[0] ?? '');
+	selectedBox = $state(BOXES[0]?.id ?? '');
 	hydrated = $state(false);
 
 	get badge(): SimBadge | null {
@@ -50,7 +45,10 @@ export class SimState {
 				if (typeof saved.selectedBadgeId === 'string') {
 					this.selectedBadgeId = saved.selectedBadgeId;
 				}
-				if (typeof saved.selectedBox === 'string' && BOXES.includes(saved.selectedBox)) {
+				if (
+					typeof saved.selectedBox === 'string' &&
+					BOXES.some((box) => box.id === saved.selectedBox)
+				) {
 					this.selectedBox = saved.selectedBox;
 				}
 			}

@@ -13,7 +13,7 @@ PWA_SERVICE="htn-pwa"
 # Public hostnames served by the global HTTPS load balancer (see docs/DEPLOY.md).
 API_PUBLIC_URL="${HTN_API_URL:-https://api.solana-htn.com}"
 PWA_PUBLIC_URL="${HTN_PWA_URL:-https://solana-htn.com}"
-SOLANA_BOX_ID="${HTN_SOLANA_BOX_ID:-blind-box-01}"
+SOLANA_BOX_ID="${HTN_SOLANA_BOX_ID:-solana-booth}"
 # A dedicated runtime identity so the database bucket is not readable by every
 # other workload in this shared project.
 RUNTIME_SA="htn-run"

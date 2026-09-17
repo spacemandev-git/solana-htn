@@ -81,7 +81,7 @@ bun run localnet        # validator + deploy, for local program hacking
 
 Copy `.env.example` to `.env`. Every value has a working local default. The
 ones that matter at the event: `SOLANA_BOX_ID` (the `box` id of the Solana
-station, default `blind-box-01`), `SOLANA_CLUSTER`, `X402_PAYER_SECRET_KEY` (the paying wallet), and
+station, default `solana-booth`), `SOLANA_CLUSTER`, `X402_PAYER_SECRET_KEY` (the paying wallet), and
 `MAX_REWARD_USD` (the per-badge cap, default $1).
 
 ## Documentation

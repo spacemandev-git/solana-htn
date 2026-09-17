@@ -21,9 +21,9 @@ afterEach(() => {
 
 describe('badge administration', () => {
   test('lists item ids and current quest for each badge', async () => {
-    const first = await json<BoxResponse>(await h.box(boxBody('badge-a', 'regular-a')));
-    await h.box(boxBody('badge-a', 'regular-b'));
-    await h.box(boxBody('badge-b', 'regular-c'));
+    const first = await json<BoxResponse>(await h.box(boxBody('badge-a', 'hardware-hub')));
+    await h.box(boxBody('badge-a', 'extended-bay'));
+    await h.box(boxBody('badge-b', 'mentor-cafe'));
     const pairingCode = first.chain_link.split('/').at(-1)!;
     await h.post('/api/quest/submit', questBody(pairingCode));
     await waitForQuest(h, 'badge-a');
@@ -37,7 +37,7 @@ describe('badge administration', () => {
   });
 
   test('reset wipes badges, awards and quests', async () => {
-    const response = await json<BoxResponse>(await h.box(boxBody('badge-c', 'regular-a')));
+    const response = await json<BoxResponse>(await h.box(boxBody('badge-c', 'hardware-hub')));
     await h.post('/api/quest/submit', questBody(response.chain_link.split('/').at(-1)!));
     await waitForQuest(h, 'badge-c');
     expect(await json<BadgeSummary[]>(await h.request('/api/badges'))).toHaveLength(1);

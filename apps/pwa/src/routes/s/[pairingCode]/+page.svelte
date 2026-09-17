@@ -3,8 +3,10 @@
 	import { tick } from 'svelte';
 	import {
 		ALL_ITEMS,
+		BOXES,
 		QUEST_STEP_LABELS,
 		atomicToUsd,
+		boxName,
 		explorerAddressUrl,
 		explorerTxUrl,
 		isQuestReward,
@@ -170,6 +172,7 @@
 				<div class="itemgrid">
 					{#each ALL_ITEMS as item (item)}
 						{@const award = awardFor(item)}
+						{@const awardingBox = BOXES.find((box) => box.item === item)}
 						{@const solanaItem = isSolanaItem(item)}
 						{@const reward = isQuestReward(item)}
 						<article class="item" class:owned={award !== null} class:reward>
@@ -179,11 +182,13 @@
 							</div>
 							<span class="label state">{award ? 'owned' : 'locked'}</span>
 							{#if award}
-								<span class="box">{award.box}</span>
+								<span class="box">{boxName(award.box)}</span>
 							{:else if reward}
-								<span class="hint">finish the quest, then tap the Solana box</span>
+								<span class="hint">finish the quest, then tap the Solana Booth</span>
 							{:else if solanaItem}
-								<span class="hint">tap the Solana box</span>
+								<span class="hint">tap the Solana Booth</span>
+							{:else if awardingBox}
+								<span class="hint">tap {awardingBox.name}</span>
 							{/if}
 						</article>
 					{/each}
@@ -331,7 +336,7 @@
 			{#if quest?.status === 'completed'}
 				<section class="block outcome success">
 					<p class="label paid">Quest complete · payout sent</p>
-					<p class="unlock">Quest complete. Tap the Solana box to collect item 9.</p>
+					<p class="unlock">Quest complete. Tap the Solana Booth to collect item 9.</p>
 					<p class="amount">
 						{quest.amountPaidAtomic === null ? '—' : atomicToUsd(quest.amountPaidAtomic)}
 						<span>USDC</span>
