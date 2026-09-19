@@ -326,10 +326,10 @@ deploy_platform() {
     --image "$server_image" \
     --region "$REGION" --platform managed --allow-unauthenticated \
     --min-instances=1 --max-instances=1 \
-    --concurrency=250 \
+    --concurrency=1000 \
     --timeout=3600 \
     --no-cpu-throttling \
-    --cpu=1 --memory=1Gi \
+    --cpu=2 --memory=1Gi \
     --set-env-vars "$env_vars" \
     "${secret_args[@]}" \
     --service-account "$(runtime_sa_email)" \

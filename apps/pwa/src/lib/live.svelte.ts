@@ -22,6 +22,8 @@ export class LiveBadge {
 	#source: EventSource | null = null;
 	#stopped = false;
 	#failures = 0;
+	#visibilityHandler: (() => void) | null = null;
+	#retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(pairingCode: string) {
 		this.pairingCode = pairingCode;
@@ -41,6 +43,22 @@ export class LiveBadge {
 			this.view = view;
 			this.status = 'live';
 			this.#open();
+			if (typeof document !== 'undefined') {
+				if (this.#visibilityHandler) {
+					document.removeEventListener('visibilitychange', this.#visibilityHandler);
+				}
+				this.#visibilityHandler = () => {
+					if (document.visibilityState === 'hidden') {
+						this.#source?.close();
+						this.#source = null;
+						if (this.#retryTimer !== null) clearTimeout(this.#retryTimer);
+						this.#retryTimer = null;
+					} else if (!this.#stopped) {
+						this.#open();
+					}
+				};
+				document.addEventListener('visibilitychange', this.#visibilityHandler);
+			}
 		} catch (err) {
 			if (this.#stopped) return;
 			this.error = describeError(err);
@@ -53,6 +71,12 @@ export class LiveBadge {
 		this.#stopped = true;
 		this.#source?.close();
 		this.#source = null;
+		if (typeof document !== 'undefined' && this.#visibilityHandler) {
+			document.removeEventListener('visibilitychange', this.#visibilityHandler);
+		}
+		this.#visibilityHandler = null;
+		if (this.#retryTimer !== null) clearTimeout(this.#retryTimer);
+		this.#retryTimer = null;
 	}
 
 	clearLog(): void {
@@ -97,6 +121,21 @@ export class LiveBadge {
 			this.#failures += 1;
 			this.status = this.#failures >= 3 ? 'unreachable' : 'reconnecting';
 			if (this.#failures >= 3 && !this.error) this.error = 'Lost the live stream. Retrying…';
+			if (source.readyState !== EventSource.CLOSED) return;
+			this.#source = null;
+			if (
+				this.#stopped ||
+				(typeof document !== 'undefined' && document.visibilityState === 'hidden')
+			) {
+				return;
+			}
+			if (this.#retryTimer !== null) clearTimeout(this.#retryTimer);
+			this.#retryTimer = null;
+			const delay = Math.min(30_000, 2_000 * 2 ** (this.#failures - 1));
+			this.#retryTimer = setTimeout(() => {
+				this.#retryTimer = null;
+				this.#open();
+			}, delay);
 		};
 	}
 

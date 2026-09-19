@@ -167,8 +167,12 @@ configured. An unknown code returns `404 badge_not_found`.
 
 Opens a Server-Sent Events stream with content type `text/event-stream`. The
 first event is the authoritative `state`. The server sends `ping` every 25
-seconds. Reconnect by opening a new stream; events are not replayed because the
-initial state contains the current truth.
+seconds and closes every stream after 10 minutes, whether or not the client is
+still listening. Reconnect by opening a new stream; events are not replayed
+because the initial state contains the current truth. Clients should also close
+the stream while the page is hidden and reopen it when it becomes visible: the
+API runs on a single Cloud Run instance and every open stream counts against
+its request-concurrency cap.
 
 Every frame uses standard SSE data framing:
 
