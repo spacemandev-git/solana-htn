@@ -150,6 +150,7 @@ Codex output is a proposal, not a merge. Opus 5 must:
 apps/server      Bun + Hono API. SQLite via bun:sqlite. SSE for live sessions.
                  Runs the quest verification agent + x402 payer.
 apps/pwa         SvelteKit 5 (runes) terminal-themed quest console + simulator.
+apps/badge-service  Bun + Hono HTN OS control plane and badge WebSocket proxy.
 packages/shared  Types, zod API schemas, and the pinned quest constants
                  (PDA seed, byte offsets, cluster/network/USDC ids).
 packages/chain   The x402 + Solana module: 402 challenge parsing, the paying
@@ -160,6 +161,7 @@ program          htn_quest — Anchor 2.0.0-rc.1 workspace (Rust + LiteSVM tests
 starter          The hacker-facing kit: x402-paywalled Hono endpoint +
                  set-message CLI. Must stay standalone-copyable (no workspace
                  imports).
+firmware         ESP-IDF HTN OS for remotely programmable hacker badges.
 scripts          Program build and local validator tooling.
 ```
 
@@ -168,7 +170,9 @@ scripts          Program build and local validator tooling.
 ```bash
 bun install
 bun run dev                 # server + PWA together
+bun run dev:badge           # HTN OS badge service
 bun test                    # all TypeScript tests
+bun run firmware:build      # ESP-IDF HTN OS firmware
 bun run program:build       # ./scripts/build-program.sh
 bun run program:test        # cargo test (LiteSVM)
 bun run localnet            # validator + deploy, prints env

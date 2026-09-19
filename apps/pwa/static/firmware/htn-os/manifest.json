@@ -1,0 +1,14 @@
+{
+  "name": "HTN OS",
+  "version": "0.2.0",
+  "chip": "esp32c3",
+  "builtAt": "2026-09-19T20:41:53Z",
+  "flashMode": "dio",
+  "flashFreq": "80m",
+  "flashSize": "4MB",
+  "parts": [
+    { "path": "bootloader.bin", "offset": 0 },
+    { "path": "partition-table.bin", "offset": 32768 },
+    { "path": "htn_os.bin", "offset": 65536 }
+  ]
+}

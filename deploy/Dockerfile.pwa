@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/pwa/package.json apps/pwa/package.json
+COPY apps/badge-service/package.json apps/badge-service/package.json
 COPY packages/chain/package.json packages/chain/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY starter/package.json starter/package.json
@@ -16,6 +17,8 @@ FROM dependencies AS builder
 
 ARG VITE_API_BASE
 ENV VITE_API_BASE=$VITE_API_BASE
+ARG VITE_BADGE_API_BASE
+ENV VITE_BADGE_API_BASE=$VITE_BADGE_API_BASE
 
 COPY . .
 RUN bun run --filter '@htn/pwa' build

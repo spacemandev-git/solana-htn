@@ -10,20 +10,30 @@ REGION="${HTN_REGION:-northamerica-northeast2}"
 REPOSITORY="htn"
 API_SERVICE="htn-api"
 PWA_SERVICE="htn-pwa"
+BADGE_SERVICE="htn-badge"
 SAMPLE_SERVICE="htn-sample"
 # Public hostnames served by the global HTTPS load balancer (see docs/DEPLOY.md).
 API_PUBLIC_URL="${HTN_API_URL:-https://api.solana-htn.com}"
 PWA_PUBLIC_URL="${HTN_PWA_URL:-https://solana-htn.com}"
+BADGE_PUBLIC_URL="${HTN_BADGE_URL:-https://badge.solana-htn.com}"
 SOLANA_BOX_ID="${HTN_SOLANA_BOX_ID:-solana-booth}"
 SOLANA_FINAL_BOX_ID="${HTN_SOLANA_FINAL_BOX_ID:-solana-booth-final}"
 SOLANA_CLUSTER="${HTN_SOLANA_CLUSTER:-devnet}"
 PAYER_SECRET="htn-payer-key"                      # Secret Manager secret holding X402_PAYER_SECRET_KEY
 RPC_SECRET="htn-solana-rpc-url"                   # Secret Manager secret holding SOLANA_RPC_URL (keyed RPC)
+BADGE_ADMIN_SECRET="htn-badge-admin-token"        # Secret Manager secret holding ADMIN_TOKEN (optional)
 SAMPLE_WALLET="${HTN_SAMPLE_WALLET:-}"            # payTo of the sample endpoint
 SAMPLE_PROGRAM_ID="${HTN_SAMPLE_PROGRAM_ID:-}"    # deployed htn_quest program the sample serves
 # A dedicated runtime identity so the database bucket is not readable by every
 # other workload in this shared project.
 RUNTIME_SA="htn-run"
+BADGE_NEG="htn-badge-neg"
+BADGE_BACKEND="htn-badge-serverless"
+BADGE_CERT="htn-badge-cert"
+LB_URLMAP="htn-api-urlmap"
+LB_HTTPS_PROXY="htn-api-https-proxy"
+LB_IP="htn-api-ip"
+DNS_ZONE="solana-htn-com"
 
 COMMAND=""
 TAG=""
@@ -39,11 +49,12 @@ Usage: ./scripts/deploy.sh <command> [options]
 Commands:
   up                 Enable APIs, create missing infrastructure, and deploy
   update             Deploy only; fail if required infrastructure is missing
-  down [--purge]     Delete all three services; also delete durable data and infrastructure with --purge
+  wire               Create the badge hostname's load-balancer and DNS pieces only
+  down [--purge]     Delete all four services; also delete durable data and infrastructure with --purge
   status             Show service URLs, latest revisions, and traffic
-  logs [api|pwa|sample]
+  logs [api|pwa|badge|sample]
                      Tail service logs (default: api)
-  url                Print the API, PWA, and optional sample URLs, one per line
+  url                Print the API, PWA, badge, and optional sample URLs, one per line
 
 Global flags:
   --project ID       GCP project (default: solana-htn; env: HTN_PROJECT)
@@ -57,6 +68,7 @@ Command flags:
   --purge            With down, also delete the database bucket and repository
 
 Environment variables:
+  HTN_BADGE_URL            Badge service public URL (default: https://badge.solana-htn.com)
   HTN_SOLANA_FINAL_BOX_ID   Final Solana box id (default: solana-booth-final)
   HTN_SOLANA_CLUSTER        Solana cluster (default: devnet)
   HTN_SAMPLE_WALLET         Sample endpoint payTo wallet (set with program id)
@@ -78,11 +90,11 @@ need_value() {
 parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      up|update|down|status|logs|url)
+      up|update|wire|down|status|logs|url)
         [ -z "$COMMAND" ] || fail "choose exactly one command"
         COMMAND="$1"
         ;;
-      api|pwa|sample)
+      api|pwa|badge|sample)
         [ "$COMMAND" = "logs" ] || fail "'$1' is only valid after the logs command"
         LOG_TARGET="$1"
         ;;
@@ -218,7 +230,7 @@ secret_exists() {
 ensure_payer_secret_access() {
   local email secret
   email="$(runtime_sa_email)"
-  for secret in "$PAYER_SECRET" "$RPC_SECRET"; do
+  for secret in "$PAYER_SECRET" "$RPC_SECRET" "$BADGE_ADMIN_SECRET"; do
     if secret_exists "$secret"; then
       gcloud secrets add-iam-policy-binding "$secret" \
         --member "serviceAccount:$email" \
@@ -227,8 +239,10 @@ ensure_payer_secret_access() {
       echo "Granted $email access to secret $secret"
     elif [ "$secret" = "$PAYER_SECRET" ]; then
       echo "Payer key: secret $PAYER_SECRET not found; payments stay disabled until it is created"
-    else
+    elif [ "$secret" = "$RPC_SECRET" ]; then
       echo "RPC: secret $RPC_SECRET not found; services use the public devnet RPC"
+    else
+      echo "Badge admin: secret $BADGE_ADMIN_SECRET not found; app deletion stays disabled"
     fi
   done
 }
@@ -272,11 +286,12 @@ build_image() {
   local image="$1"
   local dockerfile="$2"
   local api_base="${3:-}"
+  local badge_base="${4:-}"
 
   gcloud builds submit "$ROOT" \
     --project "$PROJECT" \
     --config "$ROOT/deploy/cloudbuild.yaml" \
-    --substitutions "_IMAGE=$image,_DOCKERFILE=$dockerfile,_VITE_API_BASE=$api_base"
+    --substitutions "_IMAGE=$image,_DOCKERFILE=$dockerfile,_VITE_API_BASE=$api_base,_VITE_BADGE_API_BASE=$badge_base"
 }
 
 deploy_platform() {
@@ -285,6 +300,7 @@ deploy_platform() {
   local registry="$REGION-docker.pkg.dev/$PROJECT/$REPOSITORY"
   local server_image="$registry/server:$TAG"
   local pwa_image="$registry/pwa:$TAG"
+  local badge_image="$registry/badge:$TAG"
   local sample_image="$registry/sample:$TAG"
   local node_env="production"
   $DEV_ROUTES && node_env="development"
@@ -337,8 +353,46 @@ deploy_platform() {
     --format='value(status.url)')"
   [ -n "$api_url" ] || fail "the API deployed but Cloud Run returned no service URL"
 
-  echo "Building PWA image with VITE_API_BASE=$API_PUBLIC_URL"
-  build_image "$pwa_image" "deploy/Dockerfile.pwa" "$API_PUBLIC_URL"
+  echo "Building badge image $badge_image"
+  build_image "$badge_image" "deploy/Dockerfile.badge"
+
+  local badge_env_vars
+  # The console is reachable on www. as well as the apex; both must pass CORS.
+  local badge_cors="$PWA_PUBLIC_URL"
+  case "$PWA_PUBLIC_URL" in
+    *://www.*) ;;
+    *) badge_cors="$badge_cors,${PWA_PUBLIC_URL/:\/\//://www.}" ;;
+  esac
+  # CORS_ORIGINS holds a comma, so switch gcloud's list delimiter to "|"
+  # (the ^|^ prefix; see `gcloud topic escaping`).
+  badge_env_vars="^|^NODE_ENV=$node_env|DATABASE_PATH=/tmp/badge.db|LITESTREAM_BUCKET=$bucket"
+  badge_env_vars="$badge_env_vars|CORS_ORIGINS=$badge_cors|PUBLIC_URL=$BADGE_PUBLIC_URL"
+  local -a badge_secret_args=(--clear-secrets)
+  if secret_exists "$BADGE_ADMIN_SECRET"; then
+    badge_secret_args=(--set-secrets "ADMIN_TOKEN=$BADGE_ADMIN_SECRET:latest")
+    echo "Badge admin: secret $BADGE_ADMIN_SECRET"
+  else
+    echo "Badge admin: secret $BADGE_ADMIN_SECRET not found; app deletion stays disabled"
+  fi
+
+  local badge_url
+  badge_url="$(gcloud run deploy "$BADGE_SERVICE" \
+    --image "$badge_image" \
+    --region "$REGION" --platform managed --allow-unauthenticated \
+    --min-instances=1 --max-instances=1 \
+    --concurrency=1000 \
+    --timeout=3600 \
+    --no-cpu-throttling \
+    --cpu=1 --memory=512Mi \
+    --set-env-vars "$badge_env_vars" \
+    "${badge_secret_args[@]}" \
+    --service-account "$(runtime_sa_email)" \
+    --project "$PROJECT" \
+    --format='value(status.url)')"
+  [ -n "$badge_url" ] || fail "the badge service deployed but Cloud Run returned no service URL"
+
+  echo "Building PWA image with VITE_API_BASE=$API_PUBLIC_URL and VITE_BADGE_API_BASE=$BADGE_PUBLIC_URL"
+  build_image "$pwa_image" "deploy/Dockerfile.pwa" "$API_PUBLIC_URL" "$BADGE_PUBLIC_URL"
 
   local pwa_url
   pwa_url="$(gcloud run deploy "$PWA_SERVICE" \
@@ -389,6 +443,100 @@ deploy_platform() {
 
   echo "API: $api_url  (public: $API_PUBLIC_URL)"
   echo "PWA: $pwa_url  (public: $PWA_PUBLIC_URL)"
+  echo "BADGE: $badge_url  (public: $BADGE_PUBLIC_URL)"
+}
+
+ensure_badge_lb() {
+  local badge_host
+  badge_host="${BADGE_PUBLIC_URL#*://}"
+
+  if gcloud compute network-endpoint-groups describe "$BADGE_NEG" \
+      --region "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
+    echo "Badge NEG $BADGE_NEG already exists"
+  else
+    gcloud compute network-endpoint-groups create "$BADGE_NEG" \
+      --region "$REGION" --network-endpoint-type=serverless \
+      --cloud-run-service="$BADGE_SERVICE" --project "$PROJECT"
+    echo "Created badge NEG $BADGE_NEG"
+  fi
+
+  if gcloud compute backend-services describe "$BADGE_BACKEND" \
+      --global --project "$PROJECT" >/dev/null 2>&1; then
+    echo "Badge backend $BADGE_BACKEND already exists"
+  else
+    local scheme
+    scheme="$(gcloud compute backend-services describe htn-api-serverless \
+      --global --format='value(loadBalancingScheme)' --project "$PROJECT")"
+    # No --timeout: serverless NEG backends refuse timeoutSec; the badge
+    # WebSockets are bounded by Cloud Run's own 3600 s request timeout instead.
+    gcloud compute backend-services create "$BADGE_BACKEND" \
+      --global --load-balancing-scheme="$scheme" \
+      --project "$PROJECT"
+    echo "Created badge backend $BADGE_BACKEND"
+  fi
+
+  local backends
+  backends="$(gcloud compute backend-services describe "$BADGE_BACKEND" \
+    --global --format='value(backends)' --project "$PROJECT")"
+  if [ -n "$backends" ]; then
+    echo "Badge NEG backend attachment already exists"
+  else
+    gcloud compute backend-services add-backend "$BADGE_BACKEND" \
+      --global --network-endpoint-group="$BADGE_NEG" \
+      --network-endpoint-group-region="$REGION" --project "$PROJECT"
+    echo "Created badge NEG backend attachment"
+  fi
+
+  if gcloud compute ssl-certificates describe "$BADGE_CERT" \
+      --global --project "$PROJECT" >/dev/null 2>&1; then
+    echo "Badge certificate $BADGE_CERT already exists"
+  else
+    gcloud compute ssl-certificates create "$BADGE_CERT" \
+      --domains="$badge_host" --global --project "$PROJECT"
+    echo "Created badge certificate $BADGE_CERT"
+  fi
+
+  local proxy_certificates certificate_names
+  proxy_certificates="$(gcloud compute target-https-proxies describe "$LB_HTTPS_PROXY" \
+    --global --format='value(sslCertificates)' --project "$PROJECT")"
+  certificate_names="$(printf '%s\n' "$proxy_certificates" \
+    | tr ';' '\n' \
+    | sed -e '/^$/d' -e 's#.*/##' \
+    | paste -sd, -)"
+  if [[ ",$certificate_names," = *",$BADGE_CERT,"* ]]; then
+    echo "HTTPS proxy certificate $BADGE_CERT already exists"
+  else
+    gcloud compute target-https-proxies update "$LB_HTTPS_PROXY" \
+      --global --ssl-certificates="${certificate_names:+$certificate_names,}$BADGE_CERT" \
+      --project "$PROJECT"
+    echo "Created HTTPS proxy certificate binding for $BADGE_CERT"
+  fi
+
+  local url_map
+  url_map="$(gcloud compute url-maps describe "$LB_URLMAP" \
+    --global --format=json --project "$PROJECT")"
+  if [[ "$url_map" = *"\"$badge_host\""* ]]; then
+    echo "Badge host rule for $badge_host already exists"
+  else
+    gcloud compute url-maps add-path-matcher "$LB_URLMAP" \
+      --global --path-matcher-name=htn-badge \
+      --default-service="$BADGE_BACKEND" --new-hosts="$badge_host" \
+      --project "$PROJECT"
+    echo "Created badge host rule for $badge_host"
+  fi
+
+  local ip
+  ip="$(gcloud compute addresses describe "$LB_IP" \
+    --global --format='value(address)' --project "$PROJECT")"
+  if gcloud dns record-sets describe "$badge_host." \
+      --zone "$DNS_ZONE" --type A --project "$PROJECT" >/dev/null 2>&1; then
+    echo "Badge DNS record $badge_host already exists"
+  else
+    gcloud dns record-sets create "$badge_host." \
+      --zone "$DNS_ZONE" --type A --ttl 300 --rrdatas "$ip" \
+      --project "$PROJECT"
+    echo "Created badge DNS record $badge_host"
+  fi
 }
 
 up() {
@@ -399,12 +547,17 @@ up() {
   grant_bucket_access
   ensure_payer_secret_access
   deploy_platform
+  ensure_badge_lb
 }
 
 update() {
   require_infrastructure
   ensure_payer_secret_access
   deploy_platform
+  if ! gcloud compute backend-services describe "$BADGE_BACKEND" \
+      --global --project "$PROJECT" >/dev/null 2>&1; then
+    echo "${BADGE_PUBLIC_URL#*://} is not wired to the load balancer; run './scripts/deploy.sh wire'" >&2
+  fi
 }
 
 confirm() {
@@ -433,13 +586,14 @@ delete_service() {
 }
 
 down() {
-  confirm "This deletes all three Cloud Run services. The replicated database remains in Cloud Storage."
+  confirm "This deletes all four Cloud Run services. The replicated databases remain in Cloud Storage."
   if $PURGE; then
     confirm "PURGE also permanently deletes the database bucket and every image in '$REPOSITORY'."
   fi
 
   delete_service "$API_SERVICE"
   delete_service "$PWA_SERVICE"
+  delete_service "$BADGE_SERVICE"
   delete_service "$SAMPLE_SERVICE"
 
   if ! $PURGE; then
@@ -478,22 +632,23 @@ status() {
   found="$(gcloud run services list \
     --region "$REGION" --platform managed --project "$PROJECT" \
     --format='value(metadata.name)' 2>/dev/null \
-    | grep -cE "^($API_SERVICE|$PWA_SERVICE|$SAMPLE_SERVICE)$" || true)"
+    | grep -cE "^($API_SERVICE|$PWA_SERVICE|$BADGE_SERVICE|$SAMPLE_SERVICE)$" || true)"
 
   if [ "$found" -eq 0 ]; then
-    echo "No $API_SERVICE, $PWA_SERVICE, or $SAMPLE_SERVICE in $PROJECT/$REGION; run './scripts/deploy.sh up'"
+    echo "No $API_SERVICE, $PWA_SERVICE, $BADGE_SERVICE, or $SAMPLE_SERVICE in $PROJECT/$REGION; run './scripts/deploy.sh up'"
     return
   fi
 
   gcloud run services list \
     --region "$REGION" --platform managed --project "$PROJECT" \
-    --filter="metadata.name=$API_SERVICE OR metadata.name=$PWA_SERVICE OR metadata.name=$SAMPLE_SERVICE" \
+    --filter="metadata.name=$API_SERVICE OR metadata.name=$PWA_SERVICE OR metadata.name=$BADGE_SERVICE OR metadata.name=$SAMPLE_SERVICE" \
     --format='table(metadata.name:label=SERVICE,status.url:label=URL,status.latestReadyRevisionName:label=LATEST_REVISION,status.traffic[].revisionName.flatten():label=TRAFFIC_REVISION,status.traffic[].percent.flatten():label=TRAFFIC_PERCENT)'
 }
 
 logs() {
   local service="$API_SERVICE"
   [ "$LOG_TARGET" = "pwa" ] && service="$PWA_SERVICE"
+  [ "$LOG_TARGET" = "badge" ] && service="$BADGE_SERVICE"
   [ "$LOG_TARGET" = "sample" ] && service="$SAMPLE_SERVICE"
   gcloud run services logs tail "$service" \
     --region "$REGION" --project "$PROJECT"
@@ -513,9 +668,11 @@ service_url() {
 urls() {
   local api_url
   local pwa_url
+  local badge_url
   api_url="$(service_url "$API_SERVICE")"
   pwa_url="$(service_url "$PWA_SERVICE")"
-  printf '%s\n%s\n' "$api_url" "$pwa_url"
+  badge_url="$(service_url "$BADGE_SERVICE")"
+  printf '%s\n%s\n%s\n' "$api_url" "$pwa_url" "$badge_url"
   if service_exists "$SAMPLE_SERVICE"; then
     printf '%s/quest\n' "$(service_url "$SAMPLE_SERVICE")"
   fi
@@ -527,6 +684,7 @@ preflight
 case "$COMMAND" in
   up) up ;;
   update) update ;;
+  wire) ensure_badge_lb ;;
   down) down ;;
   status) status ;;
   logs) logs ;;

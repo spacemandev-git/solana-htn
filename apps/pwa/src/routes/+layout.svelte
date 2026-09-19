@@ -24,6 +24,7 @@
 				>
 			</a>
 			<nav>
+				<a class="navlink" class:on={path.startsWith('/badge')} href="/badge">Badge</a>
 				<a class="navlink" href="https://solana.com/ai" target="_blank" rel="noopener">
 					AI on Solana ↗
 				</a>

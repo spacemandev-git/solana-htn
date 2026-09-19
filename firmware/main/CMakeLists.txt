@@ -1,0 +1,29 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "hal_display.c"
+        "fonts.c"
+        "hal_buttons.c"
+        "hal_leds.c"
+        "hal_i2c.c"
+        "hal_accel.c"
+        "hal_nfc.c"
+        "settings.c"
+        "wifi.c"
+        "link.c"
+        "ui.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        esp_lcd
+        esp_wifi
+        esp_event
+        nvs_flash
+        esp_netif
+        esp_timer
+        json
+        mbedtls
+        esp-tls
+        esp_websocket_client
+        led_strip
+)

@@ -95,3 +95,18 @@ The token contract lives in `apps/pwa/src/app.css`; this file records the *why*.
   `SolanaMark.svelte`.
 - **Not adopted:** `@solana/design-system` and Base UI are React-only, so the
   skill's component stack does not apply here; its constraints do.
+
+## Badge pages
+
+- `/badge` uses three stacked workspace cards: firmware, the owner's live
+  console, and the community app store. The flasher owns the view's only filled
+  primary action; all console and store controls remain ghost or link actions.
+- App submission stays in a native dialog. Badge connectivity uses semantic
+  status pills, while command feedback and the bounded live-event log remain
+  inline so hardware state is visible in context.
+- `/badge/docs` renders the canonical HTN OS Markdown and maps its headings,
+  tables, code, links, and blockquotes back onto the existing type and token
+  system rather than introducing a separate documentation theme.
+- `/badge/rps` keeps gameplay state in the browser, with one primary Start
+  action, semantic phase pills, player cards, and a bounded auto-scrolling
+  event log.

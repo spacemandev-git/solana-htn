@@ -1,0 +1,6 @@
+## HTN OS managed components (ESP Component Registry). Fetched by idf.py on
+## the first configure; pinned so a rebuild months later matches this build.
+dependencies:
+  idf: ">=5.5.0"
+  espressif/led_strip: "^3.0.3"
+  espressif/esp_websocket_client: "^1.8.0"

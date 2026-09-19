@@ -44,10 +44,12 @@ custody — the x402 settlement to the hacker's own `payTo` wallet is the loot.
 | --- | --- |
 | `apps/server` | Bun + Hono API. SQLite (`bun:sqlite`). Awards blind-box items, fans out badge SSE, runs the verification agent, and holds the x402 payer key. |
 | `apps/pwa` | SvelteKit 5 terminal-themed PWA: the quest console, plus the operator/simulator dashboard. |
+| `apps/badge-service` | Bun + Hono HTN OS control plane: SQLite registry/app store, badge WebSocket proxy, REST commands, and SSE events. |
 | `packages/shared` | The contract: domain types, zod API schemas, item pools, and pinned quest constants (PDA seed, byte offsets, cluster/network/payment-token ids). |
 | `packages/chain` | The x402 + Solana module: 402 challenge parsing/validation, the paying `fetch`, and raw RPC reads of hacker programs. |
 | `program` | `htn_quest`, the Anchor 2.0 reference program hackers deploy. See [PROGRAM.md](PROGRAM.md). |
 | `starter` | The kit hackers copy: an x402-paywalled Hono server + a `set-message` script. See [QUEST.md](QUEST.md). |
+| `firmware` | ESP-IDF HTN OS for badge Wi-Fi, menus, the WebSocket protocol, and remotely controlled peripherals. |
 
 ## The verification pipeline
 
@@ -70,6 +72,16 @@ money moves, so the only post-payment failure mode is a hacker whose endpoint
 lies about their own chain state.
 
 ## Key decisions
+
+### HTN OS makes the badge a platform
+
+HTN OS turns each badge into a remotely programmable device without requiring
+apps to reflash it. The firmware keeps one outbound WebSocket connected to
+`apps/badge-service`, while external apps use its HTTPS command API and SSE
+event streams. Stable badge IDs and app metadata persist in SQLite. Live badge
+sockets and command/reply correlation remain in the service process, so the
+production service must stay at exactly one instance. See [HTNOS.md](HTNOS.md)
+for the complete API, wire protocol, security model, and firmware workflow.
 
 ### Pay-once is a database fact, not a code path
 

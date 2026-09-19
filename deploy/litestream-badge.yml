@@ -1,0 +1,6 @@
+dbs:
+  - path: /tmp/badge.db
+    replicas:
+      - type: gcs
+        bucket: $LITESTREAM_BUCKET
+        path: badge.db

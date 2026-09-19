@@ -9,3 +9,5 @@ apps/server/data
 *.db
 *.db-*
 .solana-keys
+firmware/build
+firmware/managed_components
